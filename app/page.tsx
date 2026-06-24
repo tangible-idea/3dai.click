@@ -1,27 +1,46 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Upload, RefreshCw, Download, Settings, Box } from "lucide-react";
+import { RefreshCw, Download, Settings, Box } from "lucide-react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import {
-  buildClicker,
-  DEFAULT_OPTIONS,
-  type ClickerObject,
-  type ClickerOptions,
-} from "@/lib/clicker";
+  buildNfc,
+  DEFAULT_NFC_OPTIONS,
+  type NfcObject,
+  type NfcOptions,
+} from "@/lib/nfc";
 import { export3mf } from "@/lib/export3mf";
-import { rgbToHex, type PosterizeResult } from "@/lib/image-posterize";
+
+const ICON_OPTIONS = [
+  { slug: "linkedin", label: "LinkedIn" },
+  { slug: "instagram", label: "Instagram" },
+  { slug: "github", label: "GitHub" },
+  { slug: "youtube", label: "YouTube" },
+  { slug: "x", label: "X" },
+  { slug: "facebook", label: "Facebook" },
+  { slug: "tiktok", label: "TikTok" },
+  { slug: "discord", label: "Discord" },
+];
+
+const COLOR_OPTIONS = [
+  { label: "White", value: "#ffffff" },
+  { label: "Pink", value: "#ff4fa3" },
+  { label: "Black", value: "#111111" },
+  { label: "Blue", value: "#2563eb" },
+  { label: "Red", value: "#ef4444" },
+  { label: "Green", value: "#22c55e" },
+  { label: "Purple", value: "#8b5cf6" },
+  { label: "Yellow", value: "#facc15" },
+];
 
 export default function Home() {
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [opts, setOpts] = useState<ClickerOptions>(DEFAULT_OPTIONS);
+  const [opts, setOpts] = useState<NfcOptions>(DEFAULT_NFC_OPTIONS);
+  const [customIcon, setCustomIcon] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [objects, setObjects] = useState<ClickerObject[] | null>(null);
-  const [post, setPost] = useState<PosterizeResult | null>(null);
+  const [objects, setObjects] = useState<NfcObject[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<{
     renderer: THREE.WebGLRenderer;
@@ -123,34 +142,23 @@ export default function Home() {
     camera.updateProjectionMatrix();
   }, [objects]);
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      setSelectedImage(ev.target?.result as string);
-      setObjects(null);
-      setPost(null);
-      setError(null);
-    };
-    reader.readAsDataURL(file);
-  };
-
   const generate = useCallback(async () => {
-    if (!selectedImage) return;
     setIsGenerating(true);
     setError(null);
     try {
-      const result = await buildClicker(selectedImage, opts);
+      const result = await buildNfc(opts);
       setObjects(result.objects);
-      setPost(result.posterize);
     } catch (err) {
       console.error(err);
-      setError(err instanceof Error ? err.message : "Failed to build clicker");
+      setError(err instanceof Error ? err.message : "Failed to build NFC model");
     } finally {
       setIsGenerating(false);
     }
-  }, [selectedImage, opts]);
+  }, [opts]);
+
+  useEffect(() => {
+    void generate();
+  }, [generate]);
 
   const download = () => {
     if (!objects) return;
@@ -161,7 +169,7 @@ export default function Home() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `clicker-${Date.now()}.3mf`;
+    link.download = `nfc-${opts.iconSlug}-${Date.now()}.3mf`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -171,121 +179,118 @@ export default function Home() {
       <div className="max-w-6xl mx-auto space-y-10">
         <header className="text-center space-y-3">
           <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400">
-            3DAI.Click
+            NFC 3D Generator
           </h1>
           <p className="text-neutral-400 max-w-xl mx-auto">
-            Turn any image into a printable multicolor clicker. Upload an image,
-            tune the plate, and download a Bambu Studio 3MF.
+            Choose a Simple Icons logo, place it on the NFC base, select colors,
+            and download a two-part Bambu Studio 3MF.
           </p>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
           {/* Left: input */}
           <div className="space-y-8">
-            <div
-              className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all cursor-pointer ${
-                selectedImage
-                  ? "border-emerald-500/50 bg-emerald-900/10"
-                  : "border-neutral-700 hover:border-neutral-500 bg-neutral-800/50"
-              }`}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleImageUpload}
-                accept="image/*"
-                className="hidden"
-              />
-              {selectedImage ? (
-                <div className="relative aspect-video w-full max-h-64 mx-auto overflow-hidden rounded-lg">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={selectedImage}
-                    alt="Uploaded"
-                    className="object-contain w-full h-full"
-                  />
-                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                    <span className="flex items-center gap-2 text-white font-medium">
-                      <RefreshCw size={20} /> Change Image
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div className="py-12 space-y-4">
-                  <div className="mx-auto w-16 h-16 rounded-full bg-neutral-800 flex items-center justify-center">
-                    <Upload className="text-neutral-400" size={32} />
-                  </div>
-                  <div>
-                    <p className="text-lg font-medium">Click to upload image</p>
-                    <p className="text-sm text-neutral-500">JPG, PNG supported</p>
-                  </div>
-                </div>
-              )}
+            <div className="border border-neutral-800 rounded-2xl p-6 bg-neutral-800/40 space-y-5">
+              <div>
+                <h3 className="text-lg font-semibold">Icon</h3>
+                <p className="text-sm text-neutral-500 mt-1">
+                  Select from Simple Icons or enter a slug from allsvgicons.com.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {ICON_OPTIONS.map((icon) => (
+                  <button
+                    key={icon.slug}
+                    type="button"
+                    onClick={() => {
+                      setCustomIcon("");
+                      setOpts((o) => ({ ...o, iconSlug: icon.slug }));
+                    }}
+                    className={`rounded-xl border px-3 py-4 text-sm font-semibold transition-all ${
+                      opts.iconSlug === icon.slug
+                        ? "border-emerald-400 bg-emerald-500/15 text-white"
+                        : "border-neutral-700 bg-neutral-900/40 text-neutral-300 hover:border-neutral-500"
+                    }`}
+                  >
+                    {icon.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm text-neutral-300">Custom icon slug</label>
+                <input
+                  value={customIcon}
+                  onChange={(e) => setCustomIcon(e.target.value)}
+                  onBlur={() => {
+                    const slug = customIcon.trim().toLowerCase();
+                    if (slug) setOpts((o) => ({ ...o, iconSlug: slug }));
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const slug = customIcon.trim().toLowerCase();
+                      if (slug) setOpts((o) => ({ ...o, iconSlug: slug }));
+                    }
+                  }}
+                  placeholder="e.g. spotify, kakao, notion"
+                  className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none focus:border-emerald-400"
+                />
+              </div>
             </div>
 
             <div className="space-y-5">
               <h3 className="text-lg font-semibold flex items-center gap-2">
                 <Settings size={20} className="text-emerald-400" />
-                Clicker Settings
+                NFC Settings
               </h3>
 
+              <ColorPicker
+                label="Top Icon Color"
+                value={opts.topColor}
+                onChange={(v) => setOpts((o) => ({ ...o, topColor: v }))}
+              />
+              <ColorPicker
+                label="Base Color"
+                value={opts.baseColor}
+                onChange={(v) => setOpts((o) => ({ ...o, baseColor: v }))}
+              />
               <Slider
-                label="Plate Size"
-                unit="mm"
-                min={20}
+                label="Icon Size"
+                unit="%"
+                min={35}
                 max={80}
                 step={1}
-                value={opts.plateSize}
-                onChange={(v) => setOpts((o) => ({ ...o, plateSize: v }))}
+                value={Math.round(opts.iconScale * 100)}
+                onChange={(v) => setOpts((o) => ({ ...o, iconScale: v / 100 }))}
               />
               <Slider
-                label="Base Thickness"
+                label="Top Thickness"
                 unit="mm"
-                min={14}
-                max={30}
-                step={0.5}
-                value={opts.baseThickness}
-                onChange={(v) => setOpts((o) => ({ ...o, baseThickness: v }))}
-              />
-              <Slider
-                label="Image Layer Thickness"
-                unit="mm"
-                min={0.2}
+                min={0.4}
                 max={2}
                 step={0.1}
-                value={opts.imageThickness}
-                onChange={(v) => setOpts((o) => ({ ...o, imageThickness: v }))}
-              />
-              <Slider
-                label="Colors"
-                unit=""
-                min={2}
-                max={8}
-                step={1}
-                value={opts.colorCount}
-                onChange={(v) => setOpts((o) => ({ ...o, colorCount: v }))}
+                value={opts.topThickness}
+                onChange={(v) => setOpts((o) => ({ ...o, topThickness: v }))}
               />
             </div>
 
             <button
               onClick={generate}
-              disabled={!selectedImage || isGenerating}
+              disabled={isGenerating}
               className={`w-full py-4 rounded-xl font-bold text-lg transition-all flex items-center justify-center gap-2 ${
-                !selectedImage
-                  ? "bg-neutral-800 text-neutral-500 cursor-not-allowed"
-                  : isGenerating
-                    ? "bg-emerald-600/50 text-white cursor-wait"
-                    : "bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 text-white shadow-lg shadow-emerald-900/20"
+                isGenerating
+                  ? "bg-emerald-600/50 text-white cursor-wait"
+                  : "bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 text-white shadow-lg shadow-emerald-900/20"
               }`}
             >
               {isGenerating ? (
                 <>
-                  <RefreshCw className="animate-spin" /> Building clicker...
+                  <RefreshCw className="animate-spin" /> Building NFC model...
                 </>
               ) : (
                 <>
-                  <Box size={20} /> Generate Clicker
+                  <Box size={20} /> Generate NFC 3MF
                 </>
               )}
             </button>
@@ -312,19 +317,17 @@ export default function Home() {
               )}
             </div>
 
-            {post && (
-              <div className="mt-5 flex items-center gap-2">
-                <span className="text-sm text-neutral-400">Palette →</span>
-                <div className="flex gap-1.5">
-                  {post.palette.map((c, i) => (
-                    <div
-                      key={i}
-                      className="w-7 h-7 rounded-md border border-neutral-700"
-                      style={{ backgroundColor: rgbToHex(c) }}
-                      title={rgbToHex(c)}
-                    />
-                  ))}
-                </div>
+            {objects && (
+              <div className="mt-5 flex items-center gap-2 text-sm text-neutral-400">
+                <span>Filaments →</span>
+                <span className="inline-flex items-center gap-2">
+                  <span className="w-5 h-5 rounded border border-neutral-700" style={{ backgroundColor: opts.baseColor }} />
+                  Base
+                </span>
+                <span className="inline-flex items-center gap-2">
+                  <span className="w-5 h-5 rounded border border-neutral-700" style={{ backgroundColor: opts.topColor }} />
+                  Top
+                </span>
               </div>
             )}
 
@@ -340,6 +343,51 @@ export default function Home() {
         </div>
       </div>
     </main>
+  );
+}
+
+function ColorPicker({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="flex justify-between text-sm">
+        <label>{label}</label>
+        <span className="text-emerald-400 uppercase">{value}</span>
+      </div>
+      <div className="grid grid-cols-4 gap-2">
+        {COLOR_OPTIONS.map((color) => (
+          <button
+            key={`${label}-${color.value}`}
+            type="button"
+            onClick={() => onChange(color.value)}
+            className={`rounded-xl border p-2 text-xs font-medium transition-all ${
+              value.toLowerCase() === color.value
+                ? "border-emerald-400 bg-emerald-500/15 text-white"
+                : "border-neutral-700 bg-neutral-900/40 text-neutral-300 hover:border-neutral-500"
+            }`}
+          >
+            <span
+              className="mx-auto mb-2 block h-7 w-7 rounded-full border border-neutral-600"
+              style={{ backgroundColor: color.value }}
+            />
+            {color.label}
+          </button>
+        ))}
+      </div>
+      <input
+        type="color"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-10 w-full rounded-xl border border-neutral-700 bg-neutral-950 p-1"
+      />
+    </div>
   );
 }
 

@@ -5,8 +5,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "3DAI Click - Image to STL",
-  description: "Convert images to frame-based SVGs and STL models",
+  title: "NFC 3D Generator",
+  description: "Generate NFC 3D models with selectable Simple Icons and filament colors",
 };
 
 export default function RootLayout({
