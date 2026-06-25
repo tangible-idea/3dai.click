@@ -61,16 +61,23 @@ export function export3mf(objects: ClickerObject[]): Uint8Array {
     .map((o) => `<base name="${o.name}" displaycolor="${hexToDisplayColor(o.color)}"/>`)
     .join("");
 
-  // Objects start at id=2 (id=1 is the basematerials group).
+  // Mesh objects start at id=2 (id=1 is the basematerials group). They are
+  // wrapped as components inside a single assembly object so Bambu Studio
+  // imports them as ONE multi-part print object (not separate objects).
   const objXml: string[] = [];
-  const buildItems: string[] = [];
+  const components: string[] = [];
   objects.forEach((o, i) => {
     const id = i + 2;
     objXml.push(
       `<object id="${id}" type="model" pid="1" pindex="${i}">${meshXml(o.geometry)}</object>`,
     );
-    buildItems.push(`<item objectid="${id}"/>`);
+    components.push(`<component objectid="${id}"/>`);
   });
+
+  const assemblyId = objects.length + 2;
+  objXml.push(
+    `<object id="${assemblyId}" type="model"><components>${components.join("")}</components></object>`,
+  );
 
   const model = `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
@@ -79,22 +86,26 @@ export function export3mf(objects: ClickerObject[]): Uint8Array {
 ${objXml.join("\n")}
 </resources>
 <build>
-${buildItems.join("\n")}
+<item objectid="${assemblyId}"/>
 </build>
 </model>`;
 
-  // Bambu Studio: per-object filament assignment.
+  // Bambu Studio: the assembly object holds each mesh as a part with its own
+  // filament/extruder assignment.
   const settings = `<?xml version="1.0" encoding="UTF-8"?>
 <config>
+  <object id="${assemblyId}">
+    <metadata key="name" value="nfc"/>
 ${objects
   .map(
     (o, i) =>
-      `  <object id="${i + 2}">
-    <metadata key="name" value="${o.name}"/>
-    <metadata key="extruder" value="${o.filament}"/>
-  </object>`,
+      `    <part id="${i + 2}" subtype="normal_part">
+      <metadata key="name" value="${o.name}"/>
+      <metadata key="extruder" value="${o.filament}"/>
+    </part>`,
   )
   .join("\n")}
+  </object>
 </config>`;
 
   return zipSync(
