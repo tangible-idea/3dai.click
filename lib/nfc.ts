@@ -16,14 +16,16 @@ export interface NfcOptions {
   topColor: string;
   iconScale: number;
   topThickness: number;
+  iconOffsetY: number;
 }
 
 export const DEFAULT_NFC_OPTIONS: NfcOptions = {
   iconSlug: "linkedin",
   baseColor: "#ff4fa3",
   topColor: "#ffffff",
-  iconScale: 0.58,
+  iconScale: 0.72,
   topThickness: 1,
+  iconOffsetY: 2.5,
 };
 
 let cachedNfcBase: THREE.BufferGeometry | null = null;
@@ -103,7 +105,9 @@ function buildIconGeometry(
 
   merged.scale(scale, -scale, 1);
   normalize(merged);
-  merged.translate(0, 0, topZ);
+  // Positive iconOffsetY moves the icon "down" (toward the keyring tail side)
+  // in the preview, compensating for the tail offsetting the base bbox center.
+  merged.translate(0, -opts.iconOffsetY, topZ);
   merged.computeVertexNormals();
   return merged;
 }

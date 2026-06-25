@@ -259,10 +259,19 @@ export default function Home() {
                 label="Icon Size"
                 unit="%"
                 min={35}
-                max={80}
+                max={95}
                 step={1}
                 value={Math.round(opts.iconScale * 100)}
                 onChange={(v) => setOpts((o) => ({ ...o, iconScale: v / 100 }))}
+              />
+              <Slider
+                label="Icon Vertical Offset"
+                unit="mm"
+                min={-8}
+                max={8}
+                step={0.5}
+                value={opts.iconOffsetY}
+                onChange={(v) => setOpts((o) => ({ ...o, iconOffsetY: v }))}
               />
               <Slider
                 label="Top Thickness"
