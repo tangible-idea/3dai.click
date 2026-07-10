@@ -5,8 +5,9 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "NFC 3D Generator",
-  description: "Generate NFC 3D models with selectable Simple Icons and filament colors",
+  title: "NFC Tag Studio",
+  description:
+    "Design a two-color 3D-printable NFC tag with any Simple Icons logo and export it as a Bambu Studio 3MF",
 };
 
 export default function RootLayout({

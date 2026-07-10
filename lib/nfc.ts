@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { SVGLoader } from "three/addons/loaders/SVGLoader.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { iconSvgUrl } from "./icons";
 
 export interface NfcObject {
   name: string;
@@ -54,14 +55,24 @@ async function getBase(): Promise<THREE.BufferGeometry> {
   return cachedNfcBase.clone();
 }
 
-async function loadSimpleIcon(slug: string): Promise<string> {
-  const url = `https://cdn.simpleicons.org/${encodeURIComponent(slug)}/111111`;
-  const svg = await fetch(url).then((r) => {
-    if (!r.ok) throw new Error(`Failed to load icon '${slug}' from Simple Icons`);
-    return r.text();
-  });
-  if (!svg.includes("<svg")) throw new Error(`Icon '${slug}' did not return SVG data`);
-  return svg;
+const svgCache = new Map<string, Promise<string>>();
+
+function loadIconSvg(slug: string): Promise<string> {
+  let cached = svgCache.get(slug);
+  if (!cached) {
+    cached = fetch(iconSvgUrl(slug))
+      .then((r) => {
+        if (!r.ok) throw new Error(`Icon '${slug}' could not be loaded (${r.status})`);
+        return r.text();
+      })
+      .then((svg) => {
+        if (!svg.includes("<svg")) throw new Error(`Icon '${slug}' did not return SVG data`);
+        return svg;
+      });
+    cached.catch(() => svgCache.delete(slug));
+    svgCache.set(slug, cached);
+  }
+  return cached;
 }
 
 function buildIconGeometry(
@@ -69,6 +80,10 @@ function buildIconGeometry(
   base: THREE.BufferGeometry,
   opts: NfcOptions,
 ): THREE.BufferGeometry {
+  // Sink the icon slightly into the base: coplanar faces z-fight in the
+  // preview, and the overlap fuses the two parts when slicing.
+  const EMBED = 0.2;
+
   const loader = new SVGLoader();
   const data = loader.parse(svg);
   const geometries: THREE.BufferGeometry[] = [];
@@ -78,7 +93,7 @@ function buildIconGeometry(
     for (const shape of shapes) {
       geometries.push(
         new THREE.ExtrudeGeometry(shape, {
-          depth: opts.topThickness,
+          depth: opts.topThickness + EMBED,
           bevelEnabled: false,
           curveSegments: 16,
         }),
@@ -103,11 +118,14 @@ function buildIconGeometry(
   const iconH = iconBox.max.y - iconBox.min.y;
   const scale = (Math.min(baseW, baseH) * opts.iconScale) / Math.max(iconW, iconH);
 
-  merged.scale(scale, -scale, 1);
+  // Mirror Y (SVG y-axis points down) AND Z so the determinant stays
+  // positive: a single negative axis flips triangle winding, turning the
+  // mesh inside-out (top faces get culled and only side walls show).
+  merged.scale(scale, -scale, -1);
   normalize(merged);
   // Positive iconOffsetY moves the icon "down" (toward the keyring tail side)
   // in the preview, compensating for the tail offsetting the base bbox center.
-  merged.translate(0, -opts.iconOffsetY, topZ);
+  merged.translate(0, -opts.iconOffsetY, topZ - EMBED);
   merged.computeVertexNormals();
   return merged;
 }
@@ -116,7 +134,7 @@ export async function buildNfc(
   opts: NfcOptions = DEFAULT_NFC_OPTIONS,
 ): Promise<{ objects: NfcObject[] }> {
   const base = await getBase();
-  const svg = await loadSimpleIcon(opts.iconSlug);
+  const svg = await loadIconSvg(opts.iconSlug);
   const icon = buildIconGeometry(svg, base, opts);
 
   return {

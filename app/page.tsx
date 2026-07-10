@@ -1,7 +1,22 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import { RefreshCw, Download, Settings, Box } from "lucide-react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useMemo,
+  useCallback,
+} from "react";
+import {
+  Download,
+  Search,
+  Loader2,
+  Maximize2,
+  Nfc,
+  AlertTriangle,
+  LayoutGrid,
+  X,
+} from "lucide-react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import {
@@ -11,8 +26,21 @@ import {
   type NfcOptions,
 } from "@/lib/nfc";
 import { export3mf } from "@/lib/export3mf";
+import { loadCatalog, iconSvgUrl, type CatalogIcon } from "@/lib/icons";
 
-const ICON_OPTIONS = [
+const PRESET_COLORS = [
+  "#ffffff",
+  "#111111",
+  "#ff4fa3",
+  "#ef4444",
+  "#f97316",
+  "#facc15",
+  "#22c55e",
+  "#2563eb",
+  "#8b5cf6",
+];
+
+const FEATURED_ICONS: { slug: string; label: string }[] = [
   { slug: "linkedin", label: "LinkedIn" },
   { slug: "instagram", label: "Instagram" },
   { slug: "github", label: "GitHub" },
@@ -20,26 +48,17 @@ const ICON_OPTIONS = [
   { slug: "x", label: "X" },
   { slug: "facebook", label: "Facebook" },
   { slug: "tiktok", label: "TikTok" },
-  { slug: "discord", label: "Discord" },
-];
-
-const COLOR_OPTIONS = [
-  { label: "White", value: "#ffffff" },
-  { label: "Pink", value: "#ff4fa3" },
-  { label: "Black", value: "#111111" },
-  { label: "Blue", value: "#2563eb" },
-  { label: "Red", value: "#ef4444" },
-  { label: "Green", value: "#22c55e" },
-  { label: "Purple", value: "#8b5cf6" },
-  { label: "Yellow", value: "#facc15" },
+  { slug: "spotify", label: "Spotify" },
 ];
 
 export default function Home() {
   const [opts, setOpts] = useState<NfcOptions>(DEFAULT_NFC_OPTIONS);
-  const [customIcon, setCustomIcon] = useState("");
-  const [isGenerating, setIsGenerating] = useState(false);
   const [objects, setObjects] = useState<NfcObject[] | null>(null);
+  const [isGenerating, setIsGenerating] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [catalog, setCatalog] = useState<CatalogIcon[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<{
@@ -49,16 +68,30 @@ export default function Home() {
     controls: OrbitControls;
     group: THREE.Group;
   } | null>(null);
+  const framedRef = useRef(false);
+  const buildIdRef = useRef(0);
 
-  // Initialize the three.js preview once.
+  // --- Icon catalog -------------------------------------------------------
+  useEffect(() => {
+    loadCatalog()
+      .then(setCatalog)
+      .catch(() => setError("Failed to load the icon catalog"));
+  }, []);
+
+  const selectedIcon = useMemo(
+    () => catalog.find((i) => i.slug === opts.iconSlug),
+    [catalog, opts.iconSlug],
+  );
+
+  // --- three.js preview ---------------------------------------------------
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x111111);
+    scene.background = new THREE.Color(0xeceae5);
 
-    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 2000);
+    const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 2000);
     camera.position.set(60, -60, 60);
     camera.up.set(0, 0, 1);
 
@@ -72,13 +105,13 @@ export default function Home() {
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-    const dir = new THREE.DirectionalLight(0xffffff, 1.0);
-    dir.position.set(50, -30, 80);
-    scene.add(dir);
-    const dir2 = new THREE.DirectionalLight(0xffffff, 0.4);
-    dir2.position.set(-40, 40, 20);
-    scene.add(dir2);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xb8b4ab, 0.9));
+    const key = new THREE.DirectionalLight(0xffffff, 1.1);
+    key.position.set(50, -40, 90);
+    scene.add(key);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.35);
+    fill.position.set(-50, 50, 30);
+    scene.add(fill);
 
     const group = new THREE.Group();
     scene.add(group);
@@ -115,11 +148,27 @@ export default function Home() {
     };
   }, []);
 
-  // Render the assembled objects into the preview group.
-  useEffect(() => {
+  const fitView = useCallback(() => {
     const ctx = sceneRef.current;
     if (!ctx) return;
     const { group, camera, controls } = ctx;
+    const box = new THREE.Box3().setFromObject(group);
+    if (box.isEmpty()) return;
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3()).length();
+    controls.target.copy(center);
+    camera.position
+      .copy(center)
+      .add(new THREE.Vector3(size * 0.9, -size * 0.9, size * 0.9));
+    camera.updateProjectionMatrix();
+  }, []);
+
+  // Render the assembled objects into the preview group. The camera is framed
+  // once on first build and left alone afterwards so the user's view sticks.
+  useEffect(() => {
+    const ctx = sceneRef.current;
+    if (!ctx) return;
+    const { group } = ctx;
 
     group.clear();
     if (!objects) return;
@@ -127,45 +176,43 @@ export default function Home() {
     for (const o of objects) {
       const mat = new THREE.MeshStandardMaterial({
         color: new THREE.Color(o.color),
-        metalness: 0.1,
-        roughness: 0.7,
+        metalness: 0.05,
+        roughness: 0.65,
       });
       group.add(new THREE.Mesh(o.geometry, mat));
     }
 
-    // Frame the camera on the assembled bounding box.
-    const box = new THREE.Box3().setFromObject(group);
-    const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3()).length();
-    controls.target.copy(center);
-    camera.position.copy(center).add(new THREE.Vector3(size, -size, size));
-    camera.updateProjectionMatrix();
-  }, [objects]);
-
-  const generate = useCallback(async () => {
-    setIsGenerating(true);
-    setError(null);
-    try {
-      const result = await buildNfc(opts);
-      setObjects(result.objects);
-    } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : "Failed to build NFC model");
-    } finally {
-      setIsGenerating(false);
+    if (!framedRef.current) {
+      fitView();
+      framedRef.current = true;
     }
-  }, [opts]);
+  }, [objects, fitView]);
 
+  // --- model build (debounced, latest-wins) -------------------------------
   useEffect(() => {
-    void generate();
-  }, [generate]);
+    const id = ++buildIdRef.current;
+    setIsGenerating(true);
+    const timer = setTimeout(async () => {
+      try {
+        const result = await buildNfc(opts);
+        if (buildIdRef.current !== id) return;
+        setObjects(result.objects);
+        setError(null);
+      } catch (err) {
+        if (buildIdRef.current !== id) return;
+        console.error(err);
+        setError(err instanceof Error ? err.message : "Failed to build model");
+      } finally {
+        if (buildIdRef.current === id) setIsGenerating(false);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [opts]);
 
   const download = () => {
     if (!objects) return;
     const bytes = export3mf(objects);
-    const blob = new Blob([bytes as BlobPart], {
-      type: "model/3mf",
-    });
+    const blob = new Blob([bytes as BlobPart], { type: "model/3mf" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -175,88 +222,108 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-neutral-900 text-white p-8">
-      <div className="max-w-6xl mx-auto space-y-10">
-        <header className="text-center space-y-3">
-          <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400">
-            NFC 3D Generator
-          </h1>
-          <p className="text-neutral-400 max-w-xl mx-auto">
-            Choose a Simple Icons logo, place it on the NFC base, select colors,
-            and download a two-part Bambu Studio 3MF.
+    <div className="h-dvh flex flex-col">
+      {/* Header */}
+      <header className="flex items-center gap-3 h-14 px-4 sm:px-6 bg-white border-b border-stone-200 shrink-0">
+        <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white">
+          <Nfc size={18} />
+        </span>
+        <div className="leading-tight">
+          <h1 className="font-semibold">NFC Tag Studio</h1>
+          <p className="text-xs text-stone-500 hidden sm:block">
+            Design a two-color 3D-printable NFC tag and export it as Bambu Studio 3MF
           </p>
-        </header>
+        </div>
+        <button
+          onClick={download}
+          disabled={!objects || isGenerating}
+          className="ml-auto flex items-center gap-2 rounded-lg bg-indigo-600 enabled:hover:bg-indigo-500 disabled:opacity-40 text-white text-sm font-semibold px-4 py-2 transition-colors"
+        >
+          <Download size={16} /> Download 3MF
+        </button>
+      </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-          {/* Left: input */}
-          <div className="space-y-8">
-            <div className="border border-neutral-800 rounded-2xl p-6 bg-neutral-800/40 space-y-5">
-              <div>
-                <h3 className="text-lg font-semibold">Icon</h3>
-                <p className="text-sm text-neutral-500 mt-1">
-                  Select from Simple Icons or enter a slug from allsvgicons.com.
-                </p>
+      <div className="flex-1 flex flex-col lg:flex-row min-h-0">
+        {/* Sidebar */}
+        <aside className="w-full lg:w-[380px] shrink-0 bg-white lg:border-r border-t lg:border-t-0 border-stone-200 overflow-y-auto nice-scroll order-last lg:order-first">
+          <div className="p-4 sm:p-5 space-y-7">
+            {/* Icon browser */}
+            <section className="space-y-3">
+              <SectionTitle>Icon</SectionTitle>
+
+              <div className="flex items-center gap-3 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={iconSvgUrl(opts.iconSlug)}
+                  alt=""
+                  className="w-7 h-7"
+                />
+                <div className="leading-tight">
+                  <p className="text-sm font-semibold">
+                    {selectedIcon?.title ?? opts.iconSlug}
+                  </p>
+                  <p className="text-xs text-stone-500">selected icon</p>
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {ICON_OPTIONS.map((icon) => (
+              <div className="grid grid-cols-4 gap-2">
+                {FEATURED_ICONS.map((icon) => (
                   <button
                     key={icon.slug}
                     type="button"
-                    onClick={() => {
-                      setCustomIcon("");
-                      setOpts((o) => ({ ...o, iconSlug: icon.slug }));
-                    }}
-                    className={`rounded-xl border px-3 py-4 text-sm font-semibold transition-all ${
+                    title={icon.label}
+                    onClick={() =>
+                      setOpts((o) => ({ ...o, iconSlug: icon.slug }))
+                    }
+                    className={`flex flex-col items-center gap-1.5 rounded-xl border px-1 py-2.5 transition-all ${
                       opts.iconSlug === icon.slug
-                        ? "border-emerald-400 bg-emerald-500/15 text-white"
-                        : "border-neutral-700 bg-neutral-900/40 text-neutral-300 hover:border-neutral-500"
+                        ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500"
+                        : "border-stone-200 bg-white hover:border-stone-300 hover:shadow-sm"
                     }`}
                   >
-                    {icon.label}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={iconSvgUrl(icon.slug)}
+                      alt={icon.label}
+                      className="w-6 h-6"
+                    />
+                    <span className="text-[11px] font-medium text-stone-600 truncate max-w-full">
+                      {icon.label}
+                    </span>
                   </button>
                 ))}
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm text-neutral-300">Custom icon slug</label>
-                <input
-                  value={customIcon}
-                  onChange={(e) => setCustomIcon(e.target.value)}
-                  onBlur={() => {
-                    const slug = customIcon.trim().toLowerCase();
-                    if (slug) setOpts((o) => ({ ...o, iconSlug: slug }));
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      const slug = customIcon.trim().toLowerCase();
-                      if (slug) setOpts((o) => ({ ...o, iconSlug: slug }));
-                    }
-                  }}
-                  placeholder="e.g. spotify, kakao, notion"
-                  className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none focus:border-emerald-400"
-                />
-              </div>
-            </div>
+              <button
+                type="button"
+                onClick={() => setPickerOpen(true)}
+                className="w-full flex items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm font-medium text-stone-600 hover:border-indigo-300 hover:text-indigo-600 transition-colors"
+              >
+                <LayoutGrid size={15} />
+                Browse all {catalog.length > 0 ? catalog.length.toLocaleString() : ""} icons
+              </button>
+            </section>
 
-            <div className="space-y-5">
-              <h3 className="text-lg font-semibold flex items-center gap-2">
-                <Settings size={20} className="text-emerald-400" />
-                NFC Settings
-              </h3>
-
-              <ColorPicker
-                label="Top Icon Color"
-                value={opts.topColor}
-                onChange={(v) => setOpts((o) => ({ ...o, topColor: v }))}
-              />
-              <ColorPicker
-                label="Base Color"
+            {/* Colors */}
+            <section className="space-y-4">
+              <SectionTitle>Colors</SectionTitle>
+              <ColorRow
+                label="Base"
                 value={opts.baseColor}
                 onChange={(v) => setOpts((o) => ({ ...o, baseColor: v }))}
               />
+              <ColorRow
+                label="Icon"
+                value={opts.topColor}
+                onChange={(v) => setOpts((o) => ({ ...o, topColor: v }))}
+              />
+            </section>
+
+            {/* Shape */}
+            <section className="space-y-4">
+              <SectionTitle>Shape</SectionTitle>
               <Slider
-                label="Icon Size"
+                label="Icon size"
                 unit="%"
                 min={35}
                 max={95}
@@ -265,7 +332,7 @@ export default function Home() {
                 onChange={(v) => setOpts((o) => ({ ...o, iconScale: v / 100 }))}
               />
               <Slider
-                label="Icon Vertical Offset"
+                label="Vertical offset"
                 unit="mm"
                 min={-8}
                 max={8}
@@ -274,7 +341,7 @@ export default function Home() {
                 onChange={(v) => setOpts((o) => ({ ...o, iconOffsetY: v }))}
               />
               <Slider
-                label="Top Thickness"
+                label="Icon thickness"
                 unit="mm"
                 min={0.4}
                 max={2}
@@ -282,80 +349,185 @@ export default function Home() {
                 value={opts.topThickness}
                 onChange={(v) => setOpts((o) => ({ ...o, topThickness: v }))}
               />
-            </div>
+            </section>
+          </div>
+        </aside>
 
-            <button
-              onClick={generate}
-              disabled={isGenerating}
-              className={`w-full py-4 rounded-xl font-bold text-lg transition-all flex items-center justify-center gap-2 ${
-                isGenerating
-                  ? "bg-emerald-600/50 text-white cursor-wait"
-                  : "bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 text-white shadow-lg shadow-emerald-900/20"
-              }`}
-            >
-              {isGenerating ? (
-                <>
-                  <RefreshCw className="animate-spin" /> Building NFC model...
-                </>
-              ) : (
-                <>
-                  <Box size={20} /> Generate NFC 3MF
-                </>
-              )}
-            </button>
+        {/* Viewport */}
+        <main className="relative flex-1 min-h-[45dvh] bg-[#eceae5]">
+          <div ref={mountRef} className="absolute inset-0" />
 
-            {error && (
-              <div className="p-4 bg-red-900/20 border border-red-800 rounded-lg text-red-400 text-sm">
-                {error}
-              </div>
-            )}
+          <button
+            onClick={fitView}
+            title="Fit view"
+            className="absolute top-3 right-3 flex items-center justify-center w-9 h-9 rounded-lg bg-white/80 backdrop-blur border border-stone-200 text-stone-600 hover:text-stone-900 hover:bg-white transition-colors"
+          >
+            <Maximize2 size={16} />
+          </button>
+
+          <div className="absolute bottom-3 left-3 flex items-center gap-2">
+            <LegendChip label="Filament 1 · Base" color={opts.baseColor} />
+            <LegendChip label="Filament 2 · Icon" color={opts.topColor} />
           </div>
 
-          {/* Right: preview + export */}
-          <div className="bg-neutral-800/30 rounded-2xl p-6 border border-neutral-800 flex flex-col self-start lg:sticky lg:top-8">
-            <h3 className="text-lg font-semibold mb-4">Preview & Export</h3>
-
-            <div
-              ref={mountRef}
-              className="h-[420px] rounded-xl border-2 border-dashed border-neutral-800 bg-neutral-900/50 overflow-hidden relative"
-            >
-              {!objects && (
-                <div className="absolute inset-0 flex items-center justify-center text-neutral-600 pointer-events-none">
-                  <p>3D preview appears here</p>
-                </div>
-              )}
-            </div>
-
-            {objects && (
-              <div className="mt-5 flex items-center gap-2 text-sm text-neutral-400">
-                <span>Filaments →</span>
-                <span className="inline-flex items-center gap-2">
-                  <span className="w-5 h-5 rounded border border-neutral-700" style={{ backgroundColor: opts.baseColor }} />
-                  Base
-                </span>
-                <span className="inline-flex items-center gap-2">
-                  <span className="w-5 h-5 rounded border border-neutral-700" style={{ backgroundColor: opts.topColor }} />
-                  Top
-                </span>
+          {isGenerating && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="flex items-center gap-2 rounded-full bg-white/85 backdrop-blur px-4 py-2 text-sm font-medium text-stone-600 shadow-sm">
+                <Loader2 size={16} className="animate-spin text-indigo-600" />
+                Building model…
               </div>
-            )}
+            </div>
+          )}
 
-            {objects && (
-              <button
-                onClick={download}
-                className="mt-5 px-4 py-3 rounded-xl font-semibold bg-emerald-600 hover:bg-emerald-500 transition-colors flex items-center justify-center gap-2"
-              >
-                <Download size={18} /> Download 3MF
-              </button>
-            )}
-          </div>
-        </div>
+          {error && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2.5 shadow-sm max-w-[90%]">
+              <AlertTriangle size={16} className="shrink-0" />
+              {error}
+            </div>
+          )}
+        </main>
       </div>
-    </main>
+
+      {pickerOpen && (
+        <IconPickerModal
+          catalog={catalog}
+          selected={opts.iconSlug}
+          onSelect={(slug) => {
+            setOpts((o) => ({ ...o, iconSlug: slug }));
+            setPickerOpen(false);
+          }}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
+    </div>
   );
 }
 
-function ColorPicker({
+function IconPickerModal({
+  catalog,
+  selected,
+  onSelect,
+  onClose,
+}: {
+  catalog: CatalogIcon[];
+  selected: string;
+  onSelect: (slug: string) => void;
+  onClose: () => void;
+}) {
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return catalog;
+    return catalog.filter(
+      (i) => i.title.toLowerCase().includes(q) || i.slug.includes(q),
+    );
+  }, [catalog, search]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-8 bg-stone-900/50 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Choose an icon"
+        className="flex flex-col w-full max-w-4xl h-[85dvh] rounded-2xl bg-white shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-stone-200 shrink-0">
+          <h2 className="font-semibold">Choose an icon</h2>
+          <span className="text-sm text-stone-400">
+            {filtered.length.toLocaleString()} of {catalog.length.toLocaleString()}
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            title="Close"
+            className="ml-auto flex items-center justify-center w-8 h-8 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="px-5 py-3 border-b border-stone-100 shrink-0">
+          <div className="relative">
+            <Search
+              size={15}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400"
+            />
+            <input
+              autoFocus
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search icons…"
+              className="w-full rounded-xl border border-stone-200 bg-stone-50 pl-9 pr-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white"
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto nice-scroll p-4">
+          {catalog.length === 0 ? (
+            <p className="p-8 text-sm text-stone-500 text-center">
+              Loading icons…
+            </p>
+          ) : filtered.length === 0 ? (
+            <p className="p-8 text-sm text-stone-500 text-center">
+              No icons match “{search}”
+            </p>
+          ) : (
+            <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+              {filtered.map((icon) => (
+                <button
+                  key={icon.slug}
+                  type="button"
+                  title={icon.title}
+                  onClick={() => onSelect(icon.slug)}
+                  className={`flex flex-col items-center gap-1.5 rounded-xl border px-1 py-3 transition-all ${
+                    selected === icon.slug
+                      ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500"
+                      : "border-transparent hover:border-stone-200 hover:bg-stone-50"
+                  }`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={iconSvgUrl(icon.slug)}
+                    alt={icon.title}
+                    loading="lazy"
+                    decoding="async"
+                    className="w-7 h-7"
+                  />
+                  <span className="text-[11px] text-stone-500 truncate max-w-full px-1">
+                    {icon.title}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="text-[11px] font-semibold uppercase tracking-widest text-stone-400">
+      {children}
+    </h2>
+  );
+}
+
+function ColorRow({
   label,
   value,
   onChange,
@@ -365,37 +537,40 @@ function ColorPicker({
   onChange: (v: string) => void;
 }) {
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <div className="flex justify-between text-sm">
-        <label>{label}</label>
-        <span className="text-emerald-400 uppercase">{value}</span>
+        <label className="font-medium">{label}</label>
+        <span className="text-stone-400 uppercase text-xs self-center">
+          {value}
+        </span>
       </div>
-      <div className="grid grid-cols-4 gap-2">
-        {COLOR_OPTIONS.map((color) => (
+      <div className="flex items-center gap-2 flex-wrap">
+        {PRESET_COLORS.map((color) => (
           <button
-            key={`${label}-${color.value}`}
+            key={`${label}-${color}`}
             type="button"
-            onClick={() => onChange(color.value)}
-            className={`rounded-xl border p-2 text-xs font-medium transition-all ${
-              value.toLowerCase() === color.value
-                ? "border-emerald-400 bg-emerald-500/15 text-white"
-                : "border-neutral-700 bg-neutral-900/40 text-neutral-300 hover:border-neutral-500"
+            title={color}
+            onClick={() => onChange(color)}
+            className={`w-7 h-7 rounded-full border transition-all ${
+              value.toLowerCase() === color
+                ? "ring-2 ring-indigo-500 ring-offset-2 border-stone-300"
+                : "border-stone-300 hover:scale-110"
             }`}
-          >
-            <span
-              className="mx-auto mb-2 block h-7 w-7 rounded-full border border-neutral-600"
-              style={{ backgroundColor: color.value }}
-            />
-            {color.label}
-          </button>
+            style={{ backgroundColor: color }}
+          />
         ))}
+        <label
+          title="Custom color"
+          className="relative w-7 h-7 rounded-full border border-stone-300 cursor-pointer overflow-hidden bg-[conic-gradient(red,yellow,lime,cyan,blue,magenta,red)]"
+        >
+          <input
+            type="color"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="absolute inset-0 opacity-0 cursor-pointer"
+          />
+        </label>
       </div>
-      <input
-        type="color"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-10 w-full rounded-xl border border-neutral-700 bg-neutral-950 p-1"
-      />
     </div>
   );
 }
@@ -418,10 +593,10 @@ function Slider({
   onChange: (v: number) => void;
 }) {
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       <div className="flex justify-between text-sm">
-        <label>{label}</label>
-        <span className="text-emerald-400">
+        <label className="font-medium">{label}</label>
+        <span className="text-stone-500 tabular-nums">
           {value}
           {unit}
         </span>
@@ -433,8 +608,20 @@ function Slider({
         step={step}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-full h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+        className="w-full h-1.5 bg-stone-200 rounded-full appearance-none cursor-pointer accent-indigo-600"
       />
     </div>
+  );
+}
+
+function LegendChip({ label, color }: { label: string; color: string }) {
+  return (
+    <span className="flex items-center gap-2 rounded-full bg-white/80 backdrop-blur border border-stone-200 px-3 py-1.5 text-xs font-medium text-stone-600">
+      <span
+        className="w-3.5 h-3.5 rounded-full border border-stone-300"
+        style={{ backgroundColor: color }}
+      />
+      {label}
+    </span>
   );
 }
