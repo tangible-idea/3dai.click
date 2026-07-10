@@ -2,7 +2,10 @@ import * as THREE from "three";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { SVGLoader } from "three/addons/loaders/SVGLoader.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import type { Font } from "opentype.js";
 import { iconSvgUrl } from "./icons";
+import { loadFont, DEFAULT_FONT_ID } from "./fonts";
+import { textToShapes } from "./text-outline";
 
 export interface NfcObject {
   name: string;
@@ -18,6 +21,12 @@ export interface NfcOptions {
   iconScale: number;
   topThickness: number;
   iconOffsetY: number;
+  /** Name engraved flush into the back face (empty = none). */
+  backText: string;
+  backFont: string;
+  /** Text width as a fraction of the base width. */
+  backTextScale: number;
+  backTextOffsetY: number;
 }
 
 export const DEFAULT_NFC_OPTIONS: NfcOptions = {
@@ -27,6 +36,10 @@ export const DEFAULT_NFC_OPTIONS: NfcOptions = {
   iconScale: 0.72,
   topThickness: 1,
   iconOffsetY: 2.5,
+  backText: "",
+  backFont: DEFAULT_FONT_ID,
+  backTextScale: 0.6,
+  backTextOffsetY: 2.5,
 };
 
 let cachedNfcBase: THREE.BufferGeometry | null = null;
@@ -75,15 +88,8 @@ function loadIconSvg(slug: string): Promise<string> {
   return cached;
 }
 
-function buildIconGeometry(
-  svg: string,
-  base: THREE.BufferGeometry,
-  opts: NfcOptions,
-): THREE.BufferGeometry {
-  // Sink the icon slightly into the base: coplanar faces z-fight in the
-  // preview, and the overlap fuses the two parts when slicing.
-  const EMBED = 0.2;
-
+// Parse an SVG document and extrude every filled shape to the given depth.
+function extrudeSvg(svg: string, depth: number): THREE.BufferGeometry {
   const loader = new SVGLoader();
   const data = loader.parse(svg);
   const geometries: THREE.BufferGeometry[] = [];
@@ -93,7 +99,7 @@ function buildIconGeometry(
     for (const shape of shapes) {
       geometries.push(
         new THREE.ExtrudeGeometry(shape, {
-          depth: opts.topThickness + EMBED,
+          depth,
           bevelEnabled: false,
           curveSegments: 16,
         }),
@@ -101,10 +107,22 @@ function buildIconGeometry(
     }
   }
 
-  if (geometries.length === 0) throw new Error("Selected icon has no printable paths");
+  if (geometries.length === 0) throw new Error("No printable outlines found");
 
   const merged = mergeGeometries(geometries, false);
-  if (!merged) throw new Error("Failed to build icon geometry");
+  if (!merged) throw new Error("Failed to merge outlines into a solid");
+  return merged;
+}
+
+function buildIconGeometry(
+  svg: string,
+  base: THREE.BufferGeometry,
+  opts: NfcOptions,
+): THREE.BufferGeometry {
+  // Sink the icon slightly into the base: coplanar faces z-fight in the
+  // preview, and the overlap fuses the two parts when slicing.
+  const EMBED = 0.2;
+  const merged = extrudeSvg(svg, opts.topThickness + EMBED);
 
   base.computeBoundingBox();
   const baseBox = base.boundingBox!;
@@ -130,6 +148,114 @@ function buildIconGeometry(
   return merged;
 }
 
+// Depth of the name inlay on the back face (3 layers at 0.2mm).
+const TEXT_DEPTH = 0.6;
+
+function buildBackTextGeometry(
+  font: Font,
+  base: THREE.BufferGeometry,
+  opts: NfcOptions,
+): THREE.BufferGeometry {
+  const shapes = textToShapes(font, opts.backText.trim());
+  if (shapes.length === 0) throw new Error("The name has no printable outlines");
+  const merged = mergeGeometries(
+    shapes.map(
+      (shape) =>
+        new THREE.ExtrudeGeometry(shape, {
+          depth: TEXT_DEPTH,
+          bevelEnabled: false,
+        }),
+    ),
+    false,
+  );
+  if (!merged) throw new Error("Failed to build the name geometry");
+
+  base.computeBoundingBox();
+  const baseBox = base.boundingBox!;
+  const baseW = baseBox.max.x - baseBox.min.x;
+  const baseH = baseBox.max.y - baseBox.min.y;
+
+  merged.computeBoundingBox();
+  const textBox = merged.boundingBox!;
+  const textW = textBox.max.x - textBox.min.x;
+  const textH = textBox.max.y - textBox.min.y;
+  // Fit to the requested width but never taller than half the base.
+  const scale = Math.min(
+    (baseW * opts.backTextScale) / textW,
+    (baseH * 0.5) / textH,
+  );
+
+  // Mirror X in addition to the SVG y-flip (determinant stays positive, so
+  // winding is preserved): the text must read correctly from the back (-z).
+  merged.scale(-scale, -scale, 1);
+  normalize(merged);
+  merged.translate(0, -opts.backTextOffsetY, 0);
+  merged.computeVertexNormals();
+  return merged;
+}
+
+// Carve the text volume out of the base so the name part sits flush in the
+// back face — clean two-color bottom for the slicer, no hidden overlap.
+// The subtraction takes seconds for curved text, so it runs in a worker.
+let csgWorker: Worker | null = null;
+let carveId = 0;
+const pendingCarves = new Map<
+  number,
+  { resolve: (g: THREE.BufferGeometry) => void; reject: (e: Error) => void }
+>();
+
+function getCsgWorker(): Worker {
+  if (!csgWorker) {
+    csgWorker = new Worker(new URL("./csg.worker.ts", import.meta.url));
+    csgWorker.onmessage = (
+      e: MessageEvent<{ id: number; pos?: Float32Array; norm?: Float32Array; error?: string }>,
+    ) => {
+      const { id, pos, norm, error } = e.data;
+      const pending = pendingCarves.get(id);
+      if (!pending) return;
+      pendingCarves.delete(id);
+      if (error || !pos || !norm) {
+        pending.reject(new Error(error ?? "Engraving failed"));
+        return;
+      }
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      geom.setAttribute("normal", new THREE.BufferAttribute(norm, 3));
+      pending.resolve(geom);
+    };
+  }
+  return csgWorker;
+}
+
+function carve(
+  base: THREE.BufferGeometry,
+  cutter: THREE.BufferGeometry,
+): Promise<THREE.BufferGeometry> {
+  // Kill an in-flight job before starting a new one so rapid edits don't
+  // queue up multi-second CSG runs; the superseded build is discarded by
+  // the caller's latest-wins guard.
+  if (pendingCarves.size > 0 && csgWorker) {
+    csgWorker.terminate();
+    csgWorker = null;
+    pendingCarves.forEach((pending) => {
+      pending.reject(new Error("Superseded by a newer build"));
+    });
+    pendingCarves.clear();
+  }
+
+  const id = ++carveId;
+  const basePos = (base.getAttribute("position").array as Float32Array).slice();
+  const cutterPos = (cutter.getAttribute("position").array as Float32Array).slice();
+
+  return new Promise((resolve, reject) => {
+    pendingCarves.set(id, { resolve, reject });
+    getCsgWorker().postMessage({ id, basePos, cutterPos }, [
+      basePos.buffer,
+      cutterPos.buffer,
+    ]);
+  });
+}
+
 export async function buildNfc(
   opts: NfcOptions = DEFAULT_NFC_OPTIONS,
 ): Promise<{ objects: NfcObject[] }> {
@@ -137,10 +263,22 @@ export async function buildNfc(
   const svg = await loadIconSvg(opts.iconSlug);
   const icon = buildIconGeometry(svg, base, opts);
 
-  return {
-    objects: [
-      { name: "nfc_base", geometry: base, color: opts.baseColor, filament: 1 },
-      { name: `nfc_${opts.iconSlug}`, geometry: icon, color: opts.topColor, filament: 2 },
-    ],
-  };
+  const objects: NfcObject[] = [
+    { name: "nfc_base", geometry: base, color: opts.baseColor, filament: 1 },
+    { name: `nfc_${opts.iconSlug}`, geometry: icon, color: opts.topColor, filament: 2 },
+  ];
+
+  if (opts.backText.trim()) {
+    const font = await loadFont(opts.backFont);
+    const text = buildBackTextGeometry(font, base, opts);
+    objects[0].geometry = await carve(base, text);
+    objects.push({
+      name: "nfc_name",
+      geometry: text,
+      color: opts.topColor,
+      filament: 2,
+    });
+  }
+
+  return { objects };
 }

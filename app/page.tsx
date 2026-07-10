@@ -27,6 +27,7 @@ import {
 } from "@/lib/nfc";
 import { export3mf } from "@/lib/export3mf";
 import { loadCatalog, iconSvgUrl, type CatalogIcon } from "@/lib/icons";
+import { FONT_OPTIONS } from "@/lib/fonts";
 
 const PRESET_COLORS = [
   "#ffffff",
@@ -302,6 +303,79 @@ export default function Home() {
                 <LayoutGrid size={15} />
                 Browse all {catalog.length > 0 ? catalog.length.toLocaleString() : ""} icons
               </button>
+            </section>
+
+            {/* Back name */}
+            <section className="space-y-3">
+              <SectionTitle>Name on the back</SectionTitle>
+
+              <input
+                value={opts.backText}
+                onChange={(e) =>
+                  setOpts((o) => ({ ...o, backText: e.target.value }))
+                }
+                placeholder="e.g. 마크, Mark (optional)"
+                maxLength={20}
+                className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              />
+
+              {opts.backText.trim() && (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    {FONT_OPTIONS.map((font) => (
+                      <button
+                        key={font.id}
+                        type="button"
+                        onClick={() =>
+                          setOpts((o) => ({ ...o, backFont: font.id }))
+                        }
+                        className={`flex flex-col items-start gap-0.5 rounded-xl border px-3 py-2 text-left transition-all ${
+                          opts.backFont === font.id
+                            ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500"
+                            : "border-stone-200 bg-white hover:border-stone-300 hover:shadow-sm"
+                        }`}
+                      >
+                        <span
+                          className="text-lg leading-snug truncate max-w-full"
+                          style={{ fontFamily: `"${font.cssFamily}"` }}
+                        >
+                          {opts.backText.trim().slice(0, 8) || "가나다"}
+                        </span>
+                        <span className="text-[11px] text-stone-400">
+                          {font.label}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <Slider
+                    label="Name size"
+                    unit="%"
+                    min={30}
+                    max={90}
+                    step={1}
+                    value={Math.round(opts.backTextScale * 100)}
+                    onChange={(v) =>
+                      setOpts((o) => ({ ...o, backTextScale: v / 100 }))
+                    }
+                  />
+                  <Slider
+                    label="Name vertical offset"
+                    unit="mm"
+                    min={-8}
+                    max={8}
+                    step={0.5}
+                    value={opts.backTextOffsetY}
+                    onChange={(v) =>
+                      setOpts((o) => ({ ...o, backTextOffsetY: v }))
+                    }
+                  />
+                  <p className="text-xs text-stone-400">
+                    The name is inlaid flush into the back face — rotate the
+                    preview to see it.
+                  </p>
+                </>
+              )}
             </section>
 
             {/* Colors */}
