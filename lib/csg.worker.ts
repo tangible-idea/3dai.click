@@ -21,11 +21,8 @@ function fromPositions(pos: Float32Array): THREE.BufferGeometry {
   return geom;
 }
 
-console.log("[csg.worker] loaded");
-
 ctx.onmessage = (e) => {
   const { id, basePos, cutterPos } = e.data;
-  console.log("[csg.worker] carve start", id, basePos.length, cutterPos.length);
   try {
     const evaluator = new Evaluator();
     evaluator.attributes = ["position", "normal"];
@@ -38,7 +35,6 @@ ctx.onmessage = (e) => {
     if (geom.getIndex()) geom = geom.toNonIndexed();
     const pos = geom.getAttribute("position").array as Float32Array;
     const norm = geom.getAttribute("normal").array as Float32Array;
-    console.log("[csg.worker] carve done", id, pos.length);
     ctx.postMessage({ id, pos, norm }, [pos.buffer, norm.buffer]);
   } catch (err) {
     ctx.postMessage({ id, error: err instanceof Error ? err.message : String(err) });

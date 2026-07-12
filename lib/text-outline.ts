@@ -47,7 +47,7 @@ export function textToShapes(
   const toRing = (points: THREE.Vector2[]): Ring =>
     points.map((v) => [v.x, v.y]);
   const polygons = rawShapes.map((shape) => {
-    const pts = shape.extractPoints(8);
+    const pts = shape.extractPoints(5);
     return [toRing(pts.shape), ...pts.holes.map(toRing)];
   });
 
@@ -56,11 +56,51 @@ export function textToShapes(
     ...polygons.slice(1).map((p) => [p]),
   );
 
+  // Every extra outline point multiplies the cost of the engrave CSG, so
+  // decimate points that barely deviate from the line through their
+  // neighbours. Tolerance is in font units (72pt em): ~0.24 units ends up
+  // well under 0.1mm on a printed tag.
+  const tolerance = fontSize / 300;
+  const simplifyRing = (pts: THREE.Vector2[]): THREE.Vector2[] => {
+    let ring = pts;
+    for (let pass = 0; pass < 10; pass++) {
+      const kept: THREE.Vector2[] = [];
+      const n = ring.length;
+      let removed = 0;
+      let prevRemoved = false;
+      for (let i = 0; i < n; i++) {
+        const prev = ring[(i - 1 + n) % n];
+        const next = ring[(i + 1) % n];
+        const dx = next.x - prev.x;
+        const dy = next.y - prev.y;
+        const len = Math.hypot(dx, dy);
+        const dist =
+          len === 0
+            ? Math.hypot(ring[i].x - prev.x, ring[i].y - prev.y)
+            : Math.abs(
+                dy * ring[i].x - dx * ring[i].y + next.x * prev.y - next.y * prev.x,
+              ) / len;
+        // Never remove two consecutive points in one pass: the second test
+        // would measure against an already-removed neighbour.
+        if (dist < tolerance && !prevRemoved && n - removed > 4) {
+          removed++;
+          prevRemoved = true;
+        } else {
+          kept.push(ring[i]);
+          prevRemoved = false;
+        }
+      }
+      ring = kept;
+      if (removed === 0) break;
+    }
+    return ring;
+  };
+
   const toVec2 = (ring: Ring): THREE.Vector2[] => {
     const pts = ring.map(([x, y]) => new THREE.Vector2(x, y));
     // polygon-clipping closes rings by repeating the first point.
     if (pts.length > 1 && pts[0].equals(pts[pts.length - 1])) pts.pop();
-    return pts;
+    return simplifyRing(pts);
   };
 
   return unioned.map((poly) => {

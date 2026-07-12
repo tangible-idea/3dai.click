@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   LayoutGrid,
   X,
+  FlipVertical2,
 } from "lucide-react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -161,6 +162,16 @@ export default function Home() {
     camera.position
       .copy(center)
       .add(new THREE.Vector3(size * 0.9, -size * 0.9, size * 0.9));
+    camera.updateProjectionMatrix();
+  }, []);
+
+  const flipView = useCallback(() => {
+    const ctx = sceneRef.current;
+    if (!ctx) return;
+    const { camera, controls } = ctx;
+    const offset = camera.position.clone().sub(controls.target);
+    offset.z = -offset.z;
+    camera.position.copy(controls.target).add(offset);
     camera.updateProjectionMatrix();
   }, []);
 
@@ -431,13 +442,22 @@ export default function Home() {
         <main className="relative flex-1 min-h-[45dvh] bg-[#eceae5]">
           <div ref={mountRef} className="absolute inset-0" />
 
-          <button
-            onClick={fitView}
-            title="Fit view"
-            className="absolute top-3 right-3 flex items-center justify-center w-9 h-9 rounded-lg bg-white/80 backdrop-blur border border-stone-200 text-stone-600 hover:text-stone-900 hover:bg-white transition-colors"
-          >
-            <Maximize2 size={16} />
-          </button>
+          <div className="absolute top-3 right-3 flex flex-col gap-2">
+            <button
+              onClick={fitView}
+              title="Fit view"
+              className="flex items-center justify-center w-9 h-9 rounded-lg bg-white/80 backdrop-blur border border-stone-200 text-stone-600 hover:text-stone-900 hover:bg-white transition-colors"
+            >
+              <Maximize2 size={16} />
+            </button>
+            <button
+              onClick={flipView}
+              title="Show front / back"
+              className="flex items-center justify-center w-9 h-9 rounded-lg bg-white/80 backdrop-blur border border-stone-200 text-stone-600 hover:text-stone-900 hover:bg-white transition-colors"
+            >
+              <FlipVertical2 size={16} />
+            </button>
+          </div>
 
           <div className="absolute bottom-3 left-3 flex items-center gap-2">
             <LegendChip label="Filament 1 · Base" color={opts.baseColor} />
