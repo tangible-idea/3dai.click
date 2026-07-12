@@ -223,6 +223,15 @@ function getCsgWorker(): Worker {
       geom.setAttribute("normal", new THREE.BufferAttribute(norm, 3));
       pending.resolve(geom);
     };
+    csgWorker.onerror = (event) => {
+      console.error("CSG worker error:", event);
+      pendingCarves.forEach((pending) => {
+        pending.reject(new Error(`Engraving worker failed: ${event.message ?? "unknown error"}`));
+      });
+      pendingCarves.clear();
+      csgWorker?.terminate();
+      csgWorker = null;
+    };
   }
   return csgWorker;
 }
