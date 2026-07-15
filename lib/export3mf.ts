@@ -21,24 +21,36 @@ function meshXml(geom: BufferGeometry): string {
   const pos = geom.getAttribute("position");
   const index = geom.getIndex();
 
+  // Weld vertices that land on the same exported (rounded) position so shared
+  // edges reference the same vertex ids. STL loads, SVG extrusions and CSG
+  // results are non-indexed (each triangle owns 3 private vertices); exported
+  // as-is every edge is unshared and slicers flag the whole mesh as open edges.
+  const idByKey = new Map<string, number>();
   const verts: string[] = [];
-  for (let i = 0; i < pos.count; i++) {
-    verts.push(
-      `<vertex x="${num(pos.getX(i))}" y="${num(pos.getY(i))}" z="${num(pos.getZ(i))}"/>`,
-    );
-  }
+  const vertexId = (i: number): number => {
+    const x = num(pos.getX(i));
+    const y = num(pos.getY(i));
+    const z = num(pos.getZ(i));
+    const key = `${x},${y},${z}`;
+    let id = idByKey.get(key);
+    if (id === undefined) {
+      id = verts.length;
+      idByKey.set(key, id);
+      verts.push(`<vertex x="${x}" y="${y}" z="${z}"/>`);
+    }
+    return id;
+  };
 
   const tris: string[] = [];
-  if (index) {
-    for (let i = 0; i < index.count; i += 3) {
-      tris.push(
-        `<triangle v1="${index.getX(i)}" v2="${index.getX(i + 1)}" v3="${index.getX(i + 2)}"/>`,
-      );
-    }
-  } else {
-    for (let i = 0; i < pos.count; i += 3) {
-      tris.push(`<triangle v1="${i}" v2="${i + 1}" v3="${i + 2}"/>`);
-    }
+  const count = index ? index.count : pos.count;
+  const at = (i: number) => (index ? index.getX(i) : i);
+  for (let i = 0; i < count; i += 3) {
+    const a = vertexId(at(i));
+    const b = vertexId(at(i + 1));
+    const c = vertexId(at(i + 2));
+    // Triangles collapsed by the weld would themselves create open edges.
+    if (a === b || b === c || c === a) continue;
+    tris.push(`<triangle v1="${a}" v2="${b}" v3="${c}"/>`);
   }
 
   return `<mesh><vertices>${verts.join("")}</vertices><triangles>${tris.join("")}</triangles></mesh>`;
