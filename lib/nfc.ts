@@ -280,7 +280,16 @@ export async function buildNfc(
   if (opts.backText.trim()) {
     const font = await loadFont(opts.backFont);
     const text = buildBackTextGeometry(font, base, opts);
-    objects[0].geometry = await carve(base, text);
+    // The text sits flush on the back face (z 0..TEXT_DEPTH). Used directly as
+    // the CSG cutter, its bottom face is exactly coplanar with the base bottom
+    // — coplanar faces make the subtraction numerically filthy (slivers,
+    // cracks, T-junctions the slicer reports as open edges). Stretch the
+    // cutter to poke through the bottom so every cut face is clearly inside
+    // or outside the base; the carved recess itself is unchanged.
+    const cutter = text.clone();
+    cutter.scale(1, 1, (TEXT_DEPTH + 0.4) / TEXT_DEPTH);
+    cutter.translate(0, 0, -0.4);
+    objects[0].geometry = await carve(base, cutter);
     objects.push({
       name: "nfc_name",
       geometry: text,
