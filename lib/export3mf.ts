@@ -79,8 +79,13 @@ export function export3mf(objects: ClickerObject[]): Uint8Array {
     `<object id="${assemblyId}" type="model"><components>${components.join("")}</components></object>`,
   );
 
+  // The BambuStudio:3mfVersion metadata is required: without it Bambu Studio
+  // treats the file as a generic 3MF and ignores Metadata/model_settings.config
+  // (so every part falls back to filament 1 = single color).
   const model = `<?xml version="1.0" encoding="UTF-8"?>
-<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021">
+<metadata name="Application">BambuStudio-02.00.00.00</metadata>
+<metadata name="BambuStudio:3mfVersion">1</metadata>
 <resources>
 <basematerials id="1">${bases}</basematerials>
 ${objXml.join("\n")}
@@ -96,6 +101,7 @@ ${objXml.join("\n")}
 <config>
   <object id="${assemblyId}">
     <metadata key="name" value="nfc"/>
+    <metadata key="extruder" value="1"/>
 ${objects
   .map(
     (o, i) =>

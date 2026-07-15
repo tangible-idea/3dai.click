@@ -42,6 +42,20 @@ const PRESET_COLORS = [
   "#8b5cf6",
 ];
 
+// localStorage key for persisting the user's options between visits.
+const OPTIONS_STORAGE_KEY = "nfc-options-v1";
+
+function loadSavedOptions(): NfcOptions | null {
+  try {
+    const raw = localStorage.getItem(OPTIONS_STORAGE_KEY);
+    if (!raw) return null;
+    // Merge over the defaults so options added later still get a value.
+    return { ...DEFAULT_NFC_OPTIONS, ...JSON.parse(raw) };
+  } catch {
+    return null;
+  }
+}
+
 const FEATURED_ICONS: { slug: string; label: string }[] = [
   { slug: "linkedin", label: "LinkedIn" },
   { slug: "instagram", label: "Instagram" },
@@ -72,6 +86,25 @@ export default function Home() {
   } | null>(null);
   const framedRef = useRef(false);
   const buildIdRef = useRef(0);
+
+  // --- Persist options locally --------------------------------------------
+  // Restore saved options on mount (in an effect, not the initial state, so
+  // the server-rendered markup matches the first client render).
+  const optionsRestoredRef = useRef(false);
+  useEffect(() => {
+    const saved = loadSavedOptions();
+    if (saved) setOpts(saved);
+    optionsRestoredRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!optionsRestoredRef.current) return;
+    try {
+      localStorage.setItem(OPTIONS_STORAGE_KEY, JSON.stringify(opts));
+    } catch {
+      // Storage full/blocked — persistence is best-effort.
+    }
+  }, [opts]);
 
   // --- Icon catalog -------------------------------------------------------
   useEffect(() => {
