@@ -151,6 +151,43 @@ function buildIconGeometry(
 // Depth of the name inlay on the back face (3 layers at 0.2mm).
 const TEXT_DEPTH = 0.6;
 
+let cachedWatermark: THREE.BufferGeometry | null = null;
+
+async function getWatermark(): Promise<THREE.BufferGeometry> {
+  if (!cachedWatermark)
+    cachedWatermark = await loadStl("/models/tmtt_watermark.stl");
+  return cachedWatermark.clone();
+}
+
+// Brand watermark inlaid into the back face when no name is engraved. Sized
+// and placed with the same options as the name so the existing sliders apply.
+async function buildWatermarkGeometry(
+  base: THREE.BufferGeometry,
+  opts: NfcOptions,
+): Promise<THREE.BufferGeometry> {
+  const wm = await getWatermark();
+
+  base.computeBoundingBox();
+  const baseBox = base.boundingBox!;
+  const baseW = baseBox.max.x - baseBox.min.x;
+  const baseH = baseBox.max.y - baseBox.min.y;
+
+  wm.computeBoundingBox();
+  const wmBox = wm.boundingBox!;
+  const wmW = wmBox.max.x - wmBox.min.x;
+  const wmH = wmBox.max.y - wmBox.min.y;
+  const wmD = wmBox.max.z - wmBox.min.z;
+
+  // Fit to the requested width but never taller than half the base, and
+  // flatten to the same inlay depth as the name.
+  const scale = Math.min((baseW * opts.backTextScale) / wmW, (baseH * 0.5) / wmH);
+  wm.scale(scale, scale, TEXT_DEPTH / wmD);
+  normalize(wm);
+  wm.translate(0, -opts.backTextOffsetY, 0);
+  wm.computeVertexNormals();
+  return wm;
+}
+
 function buildBackTextGeometry(
   font: Font,
   base: THREE.BufferGeometry,
@@ -277,26 +314,29 @@ export async function buildNfc(
     { name: `nfc_${opts.iconSlug}`, geometry: icon, color: opts.topColor, filament: 2 },
   ];
 
-  if (opts.backText.trim()) {
-    const font = await loadFont(opts.backFont);
-    const text = buildBackTextGeometry(font, base, opts);
-    // The text sits flush on the back face (z 0..TEXT_DEPTH). Used directly as
-    // the CSG cutter, its bottom face is exactly coplanar with the base bottom
-    // — coplanar faces make the subtraction numerically filthy (slivers,
-    // cracks, T-junctions the slicer reports as open edges). Stretch the
-    // cutter to poke through the bottom so every cut face is clearly inside
-    // or outside the base; the carved recess itself is unchanged.
-    const cutter = text.clone();
-    cutter.scale(1, 1, (TEXT_DEPTH + 0.4) / TEXT_DEPTH);
-    cutter.translate(0, 0, -0.4);
-    objects[0].geometry = await carve(base, cutter);
-    objects.push({
-      name: "nfc_name",
-      geometry: text,
-      color: opts.topColor,
-      filament: 2,
-    });
-  }
+  // The back face always carries an inlay: the engraved name when one is
+  // set, otherwise the brand watermark.
+  const hasName = opts.backText.trim().length > 0;
+  const inlay = hasName
+    ? buildBackTextGeometry(await loadFont(opts.backFont), base, opts)
+    : await buildWatermarkGeometry(base, opts);
+
+  // The inlay sits flush on the back face (z 0..TEXT_DEPTH). Used directly as
+  // the CSG cutter, its bottom face is exactly coplanar with the base bottom
+  // — coplanar faces make the subtraction numerically filthy (slivers,
+  // cracks, T-junctions the slicer reports as open edges). Stretch the
+  // cutter to poke through the bottom so every cut face is clearly inside
+  // or outside the base; the carved recess itself is unchanged.
+  const cutter = inlay.clone();
+  cutter.scale(1, 1, (TEXT_DEPTH + 0.4) / TEXT_DEPTH);
+  cutter.translate(0, 0, -0.4);
+  objects[0].geometry = await carve(base, cutter);
+  objects.push({
+    name: hasName ? "nfc_name" : "nfc_watermark",
+    geometry: inlay,
+    color: opts.topColor,
+    filament: 2,
+  });
 
   return { objects };
 }

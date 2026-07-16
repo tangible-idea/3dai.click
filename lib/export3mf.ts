@@ -49,21 +49,31 @@ function weldMesh(geom: BufferGeometry): { pos: number[]; tris: number[] } {
     return id;
   };
 
-  // Duplicate triangles (same 3 vertices) are non-manifold garbage from CSG:
-  // a same-winding copy is redundant, an opposite-winding pair is a
-  // zero-thickness flap — both corrupt the edge counts the slicer checks.
-  const byVerts = new Map<string, { a: number; b: number; c: number }[]>();
   for (let i = 0; i < count; i += 3) {
-    const a = vertexId(at(i));
-    const b = vertexId(at(i + 1));
-    const c = vertexId(at(i + 2));
-    // Triangles collapsed by the weld would themselves create open edges.
+    tris.push(vertexId(at(i)), vertexId(at(i + 1)), vertexId(at(i + 2)));
+  }
+
+  return { pos, tris: dedupeTris(tris) };
+}
+
+// Drop degenerate triangles (repeated vertex) and duplicates over the same 3
+// vertices: a same-winding copy is redundant, an opposite-winding pair is a
+// zero-thickness flap — both corrupt the edge counts the slicer checks. Runs
+// after welding AND at the end of the repair pipeline, whose fan/cap stages
+// can produce this garbage themselves.
+function dedupeTris(tris: number[]): number[] {
+  const byVerts = new Map<string, { a: number; b: number; c: number }[]>();
+  for (let i = 0; i < tris.length; i += 3) {
+    const a = tris[i];
+    const b = tris[i + 1];
+    const c = tris[i + 2];
     if (a === b || b === c || c === a) continue;
     const key = [a, b, c].sort((x, y) => x - y).join(",");
     const list = byVerts.get(key);
     if (list) list.push({ a, b, c });
     else byVerts.set(key, [{ a, b, c }]);
   }
+  const out: number[] = [];
   byVerts.forEach((list) => {
     const sameWinding = (
       t: { a: number; b: number; c: number },
@@ -81,15 +91,14 @@ function weldMesh(geom: BufferGeometry): { pos: number[]; tris: number[] } {
       else backward++;
     }
     if (forward > backward) {
-      tris.push(list[0].a, list[0].b, list[0].c);
+      out.push(list[0].a, list[0].b, list[0].c);
     } else if (backward > forward) {
-      const flipped = list.find((t) => !sameWinding(t, list[0]))!;
-      tris.push(flipped.a, flipped.b, flipped.c);
+      const flipped = list.filter((t) => !sameWinding(t, list[0]))[0];
+      out.push(flipped.a, flipped.b, flipped.c);
     }
     // Equal counts cancel out completely (zero-thickness flap).
   });
-
-  return { pos, tris };
+  return out;
 }
 
 // CSG output (three-bvh-csg) is not watertight at the cut line, in two ways:
@@ -279,7 +288,108 @@ function repairTJunctions(pos: number[], tris: number[]): number[] {
     tris = removeFins(tris);
   }
 
-  return capSmallHoles(tris);
+  // The fan/cap stages above can emit degenerate or duplicated triangles;
+  // clear those out before probing for membranes so the winding numbers and
+  // edge counts are clean, and once more at the very end.
+  tris = dedupeTris(tris);
+  tris = removeInternalMembranes(pos, tris);
+  tris = removeFins(tris);
+  return dedupeTris(capSmallHoles(tris));
+}
+
+// Generalized winding number of the mesh around a point: ~1 inside the solid,
+// ~0 outside (van Oosterom–Strackee solid angle per triangle).
+function windingNumber(
+  pos: number[],
+  tris: number[],
+  px: number,
+  py: number,
+  pz: number,
+): number {
+  let sum = 0;
+  for (let i = 0; i < tris.length; i += 3) {
+    const ax = pos[tris[i] * 3] - px, ay = pos[tris[i] * 3 + 1] - py, az = pos[tris[i] * 3 + 2] - pz;
+    const bx = pos[tris[i + 1] * 3] - px, by = pos[tris[i + 1] * 3 + 1] - py, bz = pos[tris[i + 1] * 3 + 2] - pz;
+    const cx = pos[tris[i + 2] * 3] - px, cy = pos[tris[i + 2] * 3 + 1] - py, cz = pos[tris[i + 2] * 3 + 2] - pz;
+    const la = Math.sqrt(ax * ax + ay * ay + az * az);
+    const lb = Math.sqrt(bx * bx + by * by + bz * bz);
+    const lc = Math.sqrt(cx * cx + cy * cy + cz * cz);
+    const det =
+      ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx);
+    const denom =
+      la * lb * lc +
+      (ax * bx + ay * by + az * bz) * lc +
+      (bx * cx + by * cy + bz * cz) * la +
+      (cx * ax + cy * ay + cz * az) * lb;
+    sum += 2 * Math.atan2(det, denom);
+  }
+  return sum / (4 * Math.PI);
+}
+
+// CSG leaves patches of the cutter surface INSIDE the solid (internal
+// membranes). Their rim edges are shared by 3+ triangles — the slicer's
+// "non-manifold edges". A membrane triangle has solid on BOTH sides, a real
+// surface triangle has outside on one side; probe each suspicious triangle
+// (those touching an over-shared edge) with the winding number just off both
+// faces and drop the ones buried in the solid.
+const MEMBRANE_PROBE = 3e-3; // mm off the face; smaller than any real wall
+function removeInternalMembranes(pos: number[], tris: number[]): number[] {
+  for (let round = 0; round < 6; round++) {
+    const edgeCount = new Map<string, number>();
+    const edgeKey = (u: number, v: number) => (u < v ? `${u},${v}` : `${v},${u}`);
+    for (let i = 0; i < tris.length; i += 3) {
+      for (let e = 0; e < 3; e++) {
+        const k = edgeKey(tris[i + e], tris[i + ((e + 1) % 3)]);
+        edgeCount.set(k, (edgeCount.get(k) ?? 0) + 1);
+      }
+    }
+    let hasOverShared = false;
+    edgeCount.forEach((c) => {
+      if (c > 2) hasOverShared = true;
+    });
+    if (!hasOverShared) break;
+
+    const next: number[] = [];
+    let removed = false;
+    for (let i = 0; i < tris.length; i += 3) {
+      let suspicious = false;
+      for (let e = 0; e < 3; e++) {
+        if (edgeCount.get(edgeKey(tris[i + e], tris[i + ((e + 1) % 3)]))! > 2) suspicious = true;
+      }
+      if (suspicious) {
+        const a = tris[i] * 3, b = tris[i + 1] * 3, c = tris[i + 2] * 3;
+        const ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2];
+        const vx = pos[c] - pos[a], vy = pos[c + 1] - pos[a + 1], vz = pos[c + 2] - pos[a + 2];
+        let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        const nl = Math.sqrt(nx * nx + ny * ny + nz * nz);
+        if (nl > 1e-12) {
+          nx /= nl;
+          ny /= nl;
+          nz /= nl;
+          const mx = (pos[a] + pos[b] + pos[c]) / 3;
+          const my = (pos[a + 1] + pos[b + 1] + pos[c + 1]) / 3;
+          const mz = (pos[a + 2] + pos[b + 2] + pos[c + 2]) / 3;
+          const wFront = windingNumber(
+            pos, tris,
+            mx + nx * MEMBRANE_PROBE, my + ny * MEMBRANE_PROBE, mz + nz * MEMBRANE_PROBE,
+          );
+          const wBack = windingNumber(
+            pos, tris,
+            mx - nx * MEMBRANE_PROBE, my - ny * MEMBRANE_PROBE, mz - nz * MEMBRANE_PROBE,
+          );
+          // Buried in the solid (or fully floating outside): not real surface.
+          if (Math.min(wFront, wBack) > 0.4 || Math.max(wFront, wBack) < 0.4) {
+            removed = true;
+            continue;
+          }
+        }
+      }
+      next.push(tris[i], tris[i + 1], tris[i + 2]);
+    }
+    tris = next;
+    if (!removed) break;
+  }
+  return tris;
 }
 
 function countBoundaryEdges(tris: number[]): number {
