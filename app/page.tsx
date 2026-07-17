@@ -34,6 +34,7 @@ const PRESET_COLORS = [
   "#ffffff",
   "#111111",
   "#ff4fa3",
+  "#ffa8bd",
   "#ef4444",
   "#f97316",
   "#facc15",
@@ -143,6 +144,10 @@ export default function Home() {
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
+    // Neutral tone mapping keeps bright lighting from clipping to white while
+    // preserving the material colors (ACES would shift them).
+    renderer.toneMapping = THREE.NeutralToneMapping;
+    renderer.toneMappingExposure = 1.1;
     renderer.domElement.style.display = "block";
     renderer.domElement.style.width = "100%";
     renderer.domElement.style.height = "100%";
@@ -151,13 +156,19 @@ export default function Home() {
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
-    scene.add(new THREE.HemisphereLight(0xffffff, 0xb8b4ab, 0.9));
-    const key = new THREE.DirectionalLight(0xffffff, 1.1);
+    // Bright, even studio lighting: white ambient from all sides, a key from
+    // the front-top, a soft fill, and a dedicated light from below so the
+    // back face (viewed from underneath) is as bright as the front.
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xf1eee9, 1.2));
+    const key = new THREE.DirectionalLight(0xffffff, 1.5);
     key.position.set(50, -40, 90);
     scene.add(key);
-    const fill = new THREE.DirectionalLight(0xffffff, 0.35);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.5);
     fill.position.set(-50, 50, 30);
     scene.add(fill);
+    const bottom = new THREE.DirectionalLight(0xffffff, 1.0);
+    bottom.position.set(30, -25, -90);
+    scene.add(bottom);
 
     const group = new THREE.Group();
     scene.add(group);
