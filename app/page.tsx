@@ -45,6 +45,17 @@ const PRESET_COLORS = [
 // localStorage key for persisting the user's options between visits.
 const OPTIONS_STORAGE_KEY = "nfc-options-v1";
 
+// View direction from polar (from +z, deg) and azimuth (deg) angles.
+function dirFromAngles(polarDeg: number, azimuthDeg: number): THREE.Vector3 {
+  const p = THREE.MathUtils.degToRad(polarDeg);
+  const a = THREE.MathUtils.degToRad(azimuthDeg);
+  return new THREE.Vector3(
+    Math.sin(p) * Math.cos(a),
+    Math.sin(p) * Math.sin(a),
+    Math.cos(p),
+  );
+}
+
 function loadSavedOptions(): NfcOptions | null {
   try {
     const raw = localStorage.getItem(OPTIONS_STORAGE_KEY);
@@ -208,6 +219,93 @@ export default function Home() {
     camera.updateProjectionMatrix();
   }, []);
 
+  // Smoothly orbit the camera to a given view direction. Typing the name
+  // turns it to the back face so the engraving is readable; picking a logo
+  // turns it to the front. No-op when the view is already there, so it only
+  // kicks in after the user has moved the view elsewhere.
+  const turnRafRef = useRef(0);
+
+  const orbitTo = useCallback(
+    (endDir: THREE.Vector3, alreadyThere: (dirZ: number) => boolean) => {
+      const ctx = sceneRef.current;
+      if (!ctx) return;
+      const { camera, controls } = ctx;
+
+      // Redirect an in-flight turn instead of queueing behind it.
+      const wasTurning = turnRafRef.current !== 0;
+      if (wasTurning) {
+        cancelAnimationFrame(turnRafRef.current);
+        turnRafRef.current = 0;
+        controls.enabled = true;
+      }
+
+      const offset = camera.position.clone().sub(controls.target);
+      const radius = offset.length();
+      if (radius === 0) return;
+      const startDir = offset.clone().normalize();
+      if (!wasTurning && alreadyThere(startDir.z)) return;
+
+      // Interpolate in spherical coordinates (like OrbitControls itself), so
+      // the turn looks exactly like a user dragging: no roll, no odd arcs.
+      const polar0 = Math.acos(THREE.MathUtils.clamp(startDir.z, -1, 1));
+      const polar1 = Math.acos(THREE.MathUtils.clamp(endDir.z, -1, 1));
+      const azimuth1 = Math.atan2(endDir.y, endDir.x);
+      // Near the poles the start azimuth is meaningless — take the target's.
+      const azimuth0 =
+        Math.sin(polar0) < 0.05 ? azimuth1 : Math.atan2(startDir.y, startDir.x);
+      // Shortest way around.
+      let dAzimuth = azimuth1 - azimuth0;
+      if (dAzimuth > Math.PI) dAzimuth -= 2 * Math.PI;
+      if (dAzimuth < -Math.PI) dAzimuth += 2 * Math.PI;
+      const dPolar = polar1 - polar0;
+
+      const DURATION = 900;
+      const start = performance.now();
+      controls.enabled = false;
+
+      const step = (now: number) => {
+        const t = Math.min((now - start) / DURATION, 1);
+        const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        const polar = polar0 + dPolar * e;
+        const azimuth = azimuth0 + dAzimuth * e;
+        const dir = new THREE.Vector3(
+          Math.sin(polar) * Math.cos(azimuth),
+          Math.sin(polar) * Math.sin(azimuth),
+          Math.cos(polar),
+        );
+        camera.position.copy(controls.target).addScaledVector(dir, radius);
+        camera.lookAt(controls.target);
+        if (t < 1) {
+          turnRafRef.current = requestAnimationFrame(step);
+        } else {
+          turnRafRef.current = 0;
+          controls.enabled = true;
+          controls.update();
+        }
+      };
+      turnRafRef.current = requestAnimationFrame(step);
+    },
+    [],
+  );
+
+  // 15° off straight below, azimuth picked so the engraved text reads upright.
+  const showBackFace = useCallback(
+    () => orbitTo(dirFromAngles(165, 115), (z) => z < -0.55),
+    [orbitTo],
+  );
+
+  // 15° off straight above, from the default front-left diagonal.
+  const showFrontFace = useCallback(
+    () => orbitTo(dirFromAngles(15, -45), (z) => z > 0.55),
+    [orbitTo],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (turnRafRef.current) cancelAnimationFrame(turnRafRef.current);
+    };
+  }, []);
+
   // Render the assembled objects into the preview group. The camera is framed
   // once on first build and left alone afterwards so the user's view sticks.
   useEffect(() => {
@@ -317,9 +415,11 @@ export default function Home() {
                     key={icon.slug}
                     type="button"
                     title={icon.label}
-                    onClick={() =>
-                      setOpts((o) => ({ ...o, iconSlug: icon.slug }))
-                    }
+                    onClick={() => {
+                      setOpts((o) => ({ ...o, iconSlug: icon.slug }));
+                      // Picking a logo turns the preview back to the front.
+                      showFrontFace();
+                    }}
                     className={`flex flex-col items-center gap-1.5 rounded-xl border px-1 py-2.5 transition-all ${
                       opts.iconSlug === icon.slug
                         ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500"
@@ -355,9 +455,12 @@ export default function Home() {
 
               <input
                 value={opts.backText}
-                onChange={(e) =>
-                  setOpts((o) => ({ ...o, backText: e.target.value }))
-                }
+                onChange={(e) => {
+                  setOpts((o) => ({ ...o, backText: e.target.value }));
+                  // Typing the name turns the preview to the back face (only
+                  // when it is not already showing).
+                  showBackFace();
+                }}
                 placeholder="e.g. 마크, Mark (optional)"
                 maxLength={20}
                 className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
@@ -370,9 +473,11 @@ export default function Home() {
                       <button
                         key={font.id}
                         type="button"
-                        onClick={() =>
-                          setOpts((o) => ({ ...o, backFont: font.id }))
-                        }
+                        onClick={() => {
+                          setOpts((o) => ({ ...o, backFont: font.id }));
+                          // Changing the font also shows the back face.
+                          showBackFace();
+                        }}
                         className={`flex flex-col items-start gap-0.5 rounded-xl border px-3 py-2 text-left transition-all ${
                           opts.backFont === font.id
                             ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500"
@@ -522,6 +627,8 @@ export default function Home() {
           onSelect={(slug) => {
             setOpts((o) => ({ ...o, iconSlug: slug }));
             setPickerOpen(false);
+            // Picking a logo turns the preview back to the front.
+            showFrontFace();
           }}
           onClose={() => setPickerOpen(false)}
         />

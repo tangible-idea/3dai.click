@@ -33,7 +33,7 @@ export const DEFAULT_NFC_OPTIONS: NfcOptions = {
   iconSlug: "linkedin",
   baseColor: "#ff4fa3",
   topColor: "#ffffff",
-  iconScale: 0.72,
+  iconScale: 0.8,
   topThickness: 1,
   iconOffsetY: 2.5,
   backText: "",
