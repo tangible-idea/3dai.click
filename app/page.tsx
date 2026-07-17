@@ -68,6 +68,19 @@ function loadSavedOptions(): NfcOptions | null {
   }
 }
 
+// Per-logo icon sizes (fraction of the base) applied automatically when the
+// logo is selected; logos not listed keep the user's current size.
+const ICON_SCALE_PRESETS: Record<string, number> = {
+  linkedin: 0.71,
+  instagram: 0.86,
+  github: 0.82,
+  youtube: 0.75,
+  x: 0.65,
+  facebook: 0.8,
+  tiktok: 0.8,
+  spotify: 0.8,
+};
+
 const FEATURED_ICONS: { slug: string; label: string }[] = [
   { slug: "linkedin", label: "LinkedIn" },
   { slug: "instagram", label: "Instagram" },
@@ -311,6 +324,19 @@ export default function Home() {
     [orbitTo],
   );
 
+  // Selecting a logo applies its preset size and turns the view to the front.
+  const selectIcon = useCallback(
+    (slug: string) => {
+      setOpts((o) => ({
+        ...o,
+        iconSlug: slug,
+        iconScale: ICON_SCALE_PRESETS[slug] ?? o.iconScale,
+      }));
+      showFrontFace();
+    },
+    [showFrontFace],
+  );
+
   useEffect(() => {
     return () => {
       if (turnRafRef.current) cancelAnimationFrame(turnRafRef.current);
@@ -426,11 +452,7 @@ export default function Home() {
                     key={icon.slug}
                     type="button"
                     title={icon.label}
-                    onClick={() => {
-                      setOpts((o) => ({ ...o, iconSlug: icon.slug }));
-                      // Picking a logo turns the preview back to the front.
-                      showFrontFace();
-                    }}
+                    onClick={() => selectIcon(icon.slug)}
                     className={`flex flex-col items-center gap-1.5 rounded-xl border px-1 py-2.5 transition-all ${
                       opts.iconSlug === icon.slug
                         ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500"
@@ -636,10 +658,8 @@ export default function Home() {
           catalog={catalog}
           selected={opts.iconSlug}
           onSelect={(slug) => {
-            setOpts((o) => ({ ...o, iconSlug: slug }));
+            selectIcon(slug);
             setPickerOpen(false);
-            // Picking a logo turns the preview back to the front.
-            showFrontFace();
           }}
           onClose={() => setPickerOpen(false)}
         />
