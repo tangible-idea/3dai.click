@@ -18,6 +18,7 @@ import {
   X,
   FlipVertical2,
   ScanEye,
+  Sparkles,
 } from "lucide-react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -28,7 +29,12 @@ import {
   type NfcOptions,
 } from "@/lib/nfc";
 import { export3mf } from "@/lib/export3mf";
-import { loadCatalog, iconSvgUrl, type CatalogIcon } from "@/lib/icons";
+import {
+  loadCatalog,
+  iconSvgUrl,
+  svgToDataUrl,
+  type CatalogIcon,
+} from "@/lib/icons";
 import { FONT_OPTIONS } from "@/lib/fonts";
 import { FILAMENT_GROUPS, filamentLabel } from "@/lib/filaments";
 
@@ -89,6 +95,11 @@ export default function Home() {
   // X-ray preview: makes the base translucent to confirm the NFC pocket sits
   // correctly inside the tag.
   const [xray, setXray] = useState(false);
+  // AI icon generation (Poe API).
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const [catalog, setCatalog] = useState<CatalogIcon[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -316,18 +327,71 @@ export default function Home() {
     [orbitTo],
   );
 
-  // Selecting a logo applies its preset size and turns the view to the front.
+  // Selecting a logo applies its preset size, clears any AI icon, and turns
+  // the view to the front.
   const selectIcon = useCallback(
     (slug: string) => {
       setOpts((o) => ({
         ...o,
         iconSlug: slug,
         iconScale: ICON_SCALE_PRESETS[slug] ?? o.iconScale,
+        customSvg: undefined,
       }));
       showFrontFace();
     },
     [showFrontFace],
   );
+
+  // Generate a custom icon from a text prompt via the Poe-backed API route.
+  const generateIcon = useCallback(async () => {
+    const prompt = aiPrompt.trim();
+    if (!prompt || aiLoading) return;
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const res = await fetch("/api/generate-icon", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.svg) {
+        throw new Error(data?.error ?? "Generation failed. Try again.");
+      }
+      setOpts((o) => ({ ...o, iconSlug: "custom", customSvg: data.svg }));
+      showFrontFace();
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "Generation failed.");
+    } finally {
+      setAiLoading(false);
+    }
+  }, [aiPrompt, aiLoading, showFrontFace]);
+
+  // Drop the AI icon and fall back to the default catalog icon.
+  const clearCustomSvg = useCallback(() => {
+    setAiError(null);
+    setOpts((o) => ({
+      ...o,
+      customSvg: undefined,
+      iconSlug:
+        o.iconSlug === "custom" ? DEFAULT_NFC_OPTIONS.iconSlug : o.iconSlug,
+    }));
+  }, []);
+
+  // Preview source for the currently selected icon (AI SVG or catalog URL).
+  const iconPreviewSrc = opts.customSvg
+    ? svgToDataUrl(opts.customSvg)
+    : iconSvgUrl(opts.iconSlug);
+
+  // Close the AI modal on Escape.
+  useEffect(() => {
+    if (!aiOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAiOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [aiOpen]);
 
   useEffect(() => {
     return () => {
@@ -432,19 +496,28 @@ export default function Home() {
             <section className="space-y-3">
               <SectionTitle>Icon</SectionTitle>
 
-              <div className="flex items-center gap-3 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={iconSvgUrl(opts.iconSlug)}
-                  alt=""
-                  className="w-7 h-7"
-                />
-                <div className="leading-tight">
-                  <p className="text-sm font-semibold">
-                    {selectedIcon?.title ?? opts.iconSlug}
-                  </p>
-                  <p className="text-xs text-stone-500">selected icon</p>
+              <div className="flex items-stretch gap-2">
+                <div className="flex flex-1 items-center gap-3 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={iconPreviewSrc} alt="" className="w-7 h-7" />
+                  <div className="leading-tight">
+                    <p className="text-sm font-semibold">
+                      {opts.customSvg
+                        ? "AI icon"
+                        : (selectedIcon?.title ?? opts.iconSlug)}
+                    </p>
+                    <p className="text-xs text-stone-500">selected icon</p>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setAiOpen(true)}
+                  title="Generate an icon with AI"
+                  className="flex shrink-0 items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 text-sm font-semibold text-indigo-700 hover:bg-indigo-100 transition-colors"
+                >
+                  <Sparkles size={16} />
+                  AI
+                </button>
               </div>
 
               <div className="grid grid-cols-4 gap-2">
@@ -701,6 +774,97 @@ export default function Home() {
           }}
           onClose={() => setPickerOpen(false)}
         />
+      )}
+
+      {aiOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/50 backdrop-blur-sm"
+          onClick={() => setAiOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Generate an icon with AI"
+            className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 border-b border-stone-200 px-5 py-4">
+              <Sparkles size={16} className="text-indigo-600" />
+              <h2 className="font-semibold">Generate an icon with AI</h2>
+              <button
+                type="button"
+                onClick={() => setAiOpen(false)}
+                title="Close"
+                className="ml-auto flex h-8 w-8 items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3 p-5">
+              <label className="block text-sm font-medium">
+                Describe the icon
+              </label>
+              <div className="flex gap-2">
+                <input
+                  autoFocus
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") generateIcon();
+                  }}
+                  placeholder="e.g. a smiling cat, minimal"
+                  maxLength={200}
+                  className="min-w-0 flex-1 rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400"
+                />
+                <button
+                  type="button"
+                  onClick={generateIcon}
+                  disabled={aiLoading || !aiPrompt.trim()}
+                  className="flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition-colors enabled:hover:bg-indigo-500 disabled:opacity-40"
+                >
+                  {aiLoading ? (
+                    <Loader2 size={15} className="animate-spin" />
+                  ) : (
+                    <Sparkles size={15} />
+                  )}
+                  Generate
+                </button>
+              </div>
+
+              {aiError && <p className="text-xs text-red-600">{aiError}</p>}
+
+              {opts.customSvg && (
+                <div className="flex items-center gap-3 rounded-xl border border-stone-200 bg-stone-50 p-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={svgToDataUrl(opts.customSvg)}
+                    alt=""
+                    className="h-10 w-10"
+                  />
+                  <div className="leading-tight">
+                    <p className="flex items-center gap-1 text-sm font-medium text-indigo-700">
+                      <Sparkles size={12} />
+                      AI icon applied
+                    </p>
+                    <button
+                      type="button"
+                      onClick={clearCustomSvg}
+                      className="text-xs text-stone-500 underline hover:text-stone-700"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <p className="text-[11px] leading-snug text-stone-400">
+                Bold single-color silhouettes print best. Refine the prompt if
+                the shape comes out too thin or detailed.
+              </p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -29,6 +29,8 @@ export interface NfcOptions {
   backTextOffsetY: number;
   /** Carve a sealed cavity for embedding a stick-on NFC tag mid-print. */
   nfcPocket: boolean;
+  /** Raw AI-generated SVG. When set it overrides iconSlug for the top icon. */
+  customSvg?: string;
 }
 
 export const DEFAULT_NFC_OPTIONS: NfcOptions = {
@@ -328,12 +330,19 @@ export async function buildNfc(
   opts: NfcOptions = DEFAULT_NFC_OPTIONS,
 ): Promise<{ objects: NfcObject[] }> {
   const base = await getBase();
-  const svg = await loadIconSvg(opts.iconSlug);
+  // A custom AI-generated SVG takes precedence over the catalog icon.
+  const useCustom = !!opts.customSvg?.trim();
+  const svg = useCustom ? opts.customSvg!.trim() : await loadIconSvg(opts.iconSlug);
   const icon = buildIconGeometry(svg, base, opts);
 
   const objects: NfcObject[] = [
     { name: "nfc_base", geometry: base, color: opts.baseColor, filament: 1 },
-    { name: `nfc_${opts.iconSlug}`, geometry: icon, color: opts.topColor, filament: 2 },
+    {
+      name: `nfc_${useCustom ? "custom" : opts.iconSlug}`,
+      geometry: icon,
+      color: opts.topColor,
+      filament: 2,
+    },
   ];
 
   // The back face always carries an inlay: the engraved name when one is

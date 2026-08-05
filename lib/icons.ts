@@ -28,6 +28,11 @@ export function iconSvgUrl(slug: string): string {
   return `https://cdn.simpleicons.org/${encodeURIComponent(slug)}`;
 }
 
+/** Inline an SVG string as an <img>-renderable data URL (for AI icon previews). */
+export function svgToDataUrl(svg: string): string {
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
 let catalogPromise: Promise<CatalogIcon[]> | null = null;
 
 export function loadCatalog(): Promise<CatalogIcon[]> {
