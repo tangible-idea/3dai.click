@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { poeChat, poeModel, type PoeMode } from "@/lib/poe";
 
 // AI icon generation via Poe's OpenAI-compatible API. The key stays server-side.
-// https://creator.poe.com/docs/external-applications/openai-compatible-api
-const POE_URL = "https://api.poe.com/v1/chat/completions";
-const DEFAULT_MODEL = "Claude-Sonnet-4.6";
-
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -59,9 +56,11 @@ export async function POST(req: NextRequest) {
   }
 
   let prompt = "";
+  let mode: PoeMode = "fast";
   try {
     const body = await req.json();
     prompt = String(body?.prompt ?? "").trim();
+    if (body?.mode === "detail") mode = "detail";
   } catch {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
@@ -73,42 +72,21 @@ export async function POST(req: NextRequest) {
   }
   if (prompt.length > 300) prompt = prompt.slice(0, 300);
 
-  const model = process.env.POE_MODEL || DEFAULT_MODEL;
-
-  let res: Response;
+  let content: string;
   try {
-    res = await fetch(POE_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.4,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: `Design an icon: ${prompt}` },
-        ],
-      }),
+    content = await poeChat({
+      apiKey: key,
+      model: poeModel(mode),
+      system: SYSTEM_PROMPT,
+      user: `Design an icon: ${prompt}`,
     });
-  } catch {
+  } catch (err) {
     return NextResponse.json(
-      { error: "Could not reach the Poe API." },
+      { error: err instanceof Error ? err.message : "Generation failed." },
       { status: 502 },
     );
   }
 
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    return NextResponse.json(
-      { error: `Poe API error (${res.status}). ${detail.slice(0, 200)}`.trim() },
-      { status: 502 },
-    );
-  }
-
-  const data = await res.json().catch(() => null);
-  const content: string = data?.choices?.[0]?.message?.content ?? "";
   const svg = extractSvg(content);
   if (!svg) {
     return NextResponse.json(

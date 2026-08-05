@@ -124,3 +124,10 @@ export function filamentLabel(hex: string): string | null {
   const match = ALL_FILAMENTS.find((f) => f.hex === target);
   return match ? `${match.type} · ${match.name}` : null;
 }
+
+// Resolve a filament by its exact color name (case-insensitive). Names can
+// repeat across groups (e.g. "Light Gray"); the first group order wins.
+export function filamentByName(name: string): Filament | null {
+  const t = name.trim().toLowerCase();
+  return ALL_FILAMENTS.find((f) => f.name.toLowerCase() === t) ?? null;
+}

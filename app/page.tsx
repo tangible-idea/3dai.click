@@ -63,6 +63,22 @@ function loadSavedOptions(): NfcOptions | null {
   }
 }
 
+// Keep the last few AI-generated icons so they can be reused without regenerating.
+const AI_HISTORY_KEY = "nfc-ai-history-v1";
+const AI_HISTORY_MAX = 5;
+
+function loadAiHistory(): string[] {
+  try {
+    const raw = localStorage.getItem(AI_HISTORY_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr.filter((s) => typeof s === "string").slice(0, AI_HISTORY_MAX);
+  } catch {
+    return [];
+  }
+}
+
 // Per-logo icon sizes (fraction of the base) applied automatically when the
 // logo is selected; logos not listed keep the user's current size.
 const ICON_SCALE_PRESETS: Record<string, number> = {
@@ -98,8 +114,17 @@ export default function Home() {
   // AI icon generation (Poe API).
   const [aiOpen, setAiOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
+  const [aiMode, setAiMode] = useState<"fast" | "detail">("fast");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [aiHistory, setAiHistory] = useState<string[]>([]);
+  // AI tag designer: one prompt -> icon + 2 filament colors + back name.
+  const [designOpen, setDesignOpen] = useState(false);
+  const [designPrompt, setDesignPrompt] = useState("");
+  const [designMode, setDesignMode] = useState<"fast" | "detail">("fast");
+  const [designLoading, setDesignLoading] = useState(false);
+  const [designError, setDesignError] = useState<string | null>(null);
+  const [designSummary, setDesignSummary] = useState<string | null>(null);
 
   const [catalog, setCatalog] = useState<CatalogIcon[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -123,6 +148,7 @@ export default function Home() {
     const saved = loadSavedOptions();
     if (saved) setOpts(saved);
     optionsRestoredRef.current = true;
+    setAiHistory(loadAiHistory());
   }, []);
 
   useEffect(() => {
@@ -342,6 +368,31 @@ export default function Home() {
     [showFrontFace],
   );
 
+  // Apply an SVG as the icon and turn to the front to reveal it.
+  const applyCustomSvg = useCallback(
+    (svg: string) => {
+      setOpts((o) => ({ ...o, iconSlug: "custom", customSvg: svg }));
+      showFrontFace();
+    },
+    [showFrontFace],
+  );
+
+  // Push a freshly generated icon to the front of the history (deduped, capped).
+  const pushAiHistory = useCallback((svg: string) => {
+    setAiHistory((prev) => {
+      const next = [svg, ...prev.filter((s) => s !== svg)].slice(
+        0,
+        AI_HISTORY_MAX,
+      );
+      try {
+        localStorage.setItem(AI_HISTORY_KEY, JSON.stringify(next));
+      } catch {
+        // best-effort persistence
+      }
+      return next;
+    });
+  }, []);
+
   // Generate a custom icon from a text prompt via the Poe-backed API route.
   const generateIcon = useCallback(async () => {
     const prompt = aiPrompt.trim();
@@ -352,20 +403,22 @@ export default function Home() {
       const res = await fetch("/api/generate-icon", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, mode: aiMode }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.svg) {
         throw new Error(data?.error ?? "Generation failed. Try again.");
       }
-      setOpts((o) => ({ ...o, iconSlug: "custom", customSvg: data.svg }));
-      showFrontFace();
+      pushAiHistory(data.svg);
+      applyCustomSvg(data.svg);
+      // Close the popup so the result is shown right away.
+      setAiOpen(false);
     } catch (err) {
       setAiError(err instanceof Error ? err.message : "Generation failed.");
     } finally {
       setAiLoading(false);
     }
-  }, [aiPrompt, aiLoading, showFrontFace]);
+  }, [aiPrompt, aiMode, aiLoading, pushAiHistory, applyCustomSvg]);
 
   // Drop the AI icon and fall back to the default catalog icon.
   const clearCustomSvg = useCallback(() => {
@@ -378,20 +431,84 @@ export default function Home() {
     }));
   }, []);
 
+  // AI tag designer: describe the tag, and let the model pick a catalog icon,
+  // a contrasting Bambu filament pair, and an optional engraved name.
+  const designTag = useCallback(async () => {
+    const prompt = designPrompt.trim();
+    if (!prompt || designLoading) return;
+    setDesignLoading(true);
+    setDesignError(null);
+    setDesignSummary(null);
+    try {
+      const res = await fetch("/api/design-tag", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, mode: designMode }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data) {
+        throw new Error(data?.error ?? "Design failed. Try again.");
+      }
+
+      // Resolve the icon keyword against the loaded catalog (exact slug, then
+      // fa-prefixed, then title, then a loose contains match).
+      const q = String(data.icon ?? "")
+        .toLowerCase()
+        .trim();
+      const slug = q
+        ? (catalog.find((i) => i.slug === q)?.slug ??
+          catalog.find((i) => i.slug === `fa-${q}`)?.slug ??
+          catalog.find((i) => i.title.toLowerCase() === q)?.slug ??
+          catalog.find(
+            (i) => i.slug.includes(q) || i.title.toLowerCase().includes(q),
+          )?.slug ??
+          null)
+        : null;
+
+      setOpts((o) => ({
+        ...o,
+        customSvg: undefined,
+        iconSlug: slug ?? o.iconSlug,
+        iconScale: slug && ICON_SCALE_PRESETS[slug] ? ICON_SCALE_PRESETS[slug] : o.iconScale,
+        baseColor: data.baseColor ?? o.baseColor,
+        topColor: data.topColor ?? o.topColor,
+        backText:
+          typeof data.name === "string" && data.name ? data.name : o.backText,
+      }));
+
+      const iconLabel = slug
+        ? (catalog.find((i) => i.slug === slug)?.title ?? slug)
+        : q || "current icon";
+      setDesignSummary(
+        `${iconLabel} · ${data.baseColorName} + ${data.topColorName}${
+          data.name ? ` · “${data.name}”` : ""
+        }`,
+      );
+      showFrontFace();
+      setDesignOpen(false);
+    } catch (err) {
+      setDesignError(err instanceof Error ? err.message : "Design failed.");
+    } finally {
+      setDesignLoading(false);
+    }
+  }, [designPrompt, designMode, designLoading, catalog, showFrontFace]);
+
   // Preview source for the currently selected icon (AI SVG or catalog URL).
   const iconPreviewSrc = opts.customSvg
     ? svgToDataUrl(opts.customSvg)
     : iconSvgUrl(opts.iconSlug);
 
-  // Close the AI modal on Escape.
+  // Close the AI modals on Escape.
   useEffect(() => {
-    if (!aiOpen) return;
+    if (!aiOpen && !designOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setAiOpen(false);
+      if (e.key !== "Escape") return;
+      setAiOpen(false);
+      setDesignOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [aiOpen]);
+  }, [aiOpen, designOpen]);
 
   useEffect(() => {
     return () => {
@@ -492,6 +609,27 @@ export default function Home() {
         {/* Sidebar */}
         <aside className="w-full lg:w-[380px] shrink-0 bg-white lg:border-r border-t lg:border-t-0 border-stone-200 overflow-y-auto nice-scroll order-last lg:order-first">
           <div className="p-4 sm:p-5 space-y-7">
+            {/* AI tag designer */}
+            <section className="space-y-2">
+              <button
+                type="button"
+                onClick={() => setDesignOpen(true)}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-3 py-3 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+              >
+                <Sparkles size={16} />
+                AI로 태그 디자인
+              </button>
+              {designSummary && (
+                <p className="flex items-start gap-1.5 text-xs text-stone-500">
+                  <Sparkles
+                    size={12}
+                    className="mt-0.5 shrink-0 text-indigo-500"
+                  />
+                  <span>{designSummary}</span>
+                </p>
+              )}
+            </section>
+
             {/* Icon browser */}
             <section className="space-y-3">
               <SectionTitle>Icon</SectionTitle>
@@ -802,6 +940,34 @@ export default function Home() {
             </div>
 
             <div className="space-y-3 p-5">
+              <div className="space-y-1.5">
+                <span className="block text-sm font-medium">Model</span>
+                <div className="flex gap-1 rounded-lg bg-stone-100 p-0.5">
+                  {(
+                    [
+                      { key: "fast", label: "Fast", hint: "quicker" },
+                      { key: "detail", label: "Detail", hint: "higher quality" },
+                    ] as const
+                  ).map((m) => (
+                    <button
+                      key={m.key}
+                      type="button"
+                      onClick={() => setAiMode(m.key)}
+                      className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+                        aiMode === m.key
+                          ? "bg-white text-stone-800 shadow-sm"
+                          : "text-stone-500 hover:text-stone-700"
+                      }`}
+                    >
+                      {m.label}
+                      <span className="ml-1 text-[10px] text-stone-400">
+                        {m.hint}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <label className="block text-sm font-medium">
                 Describe the icon
               </label>
@@ -834,33 +1000,153 @@ export default function Home() {
 
               {aiError && <p className="text-xs text-red-600">{aiError}</p>}
 
-              {opts.customSvg && (
-                <div className="flex items-center gap-3 rounded-xl border border-stone-200 bg-stone-50 p-3">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={svgToDataUrl(opts.customSvg)}
-                    alt=""
-                    className="h-10 w-10"
-                  />
-                  <div className="leading-tight">
-                    <p className="flex items-center gap-1 text-sm font-medium text-indigo-700">
-                      <Sparkles size={12} />
-                      AI icon applied
-                    </p>
-                    <button
-                      type="button"
-                      onClick={clearCustomSvg}
-                      className="text-xs text-stone-500 underline hover:text-stone-700"
-                    >
-                      Remove
-                    </button>
+              {aiHistory.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Recent</span>
+                    {opts.customSvg && (
+                      <button
+                        type="button"
+                        onClick={clearCustomSvg}
+                        className="text-xs text-stone-500 underline hover:text-stone-700"
+                      >
+                        Remove active
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {aiHistory.map((svg, i) => {
+                      const active = opts.customSvg === svg;
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => {
+                            applyCustomSvg(svg);
+                            setAiOpen(false);
+                          }}
+                          title="Use this icon"
+                          className={`flex h-12 w-12 items-center justify-center rounded-lg border bg-white p-1.5 transition-all ${
+                            active
+                              ? "border-indigo-500 ring-1 ring-indigo-500"
+                              : "border-stone-200 hover:border-stone-300 hover:shadow-sm"
+                          }`}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={svgToDataUrl(svg)}
+                            alt=""
+                            className="h-full w-full object-contain"
+                          />
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
 
               <p className="text-[11px] leading-snug text-stone-400">
                 Bold single-color silhouettes print best. Refine the prompt if
-                the shape comes out too thin or detailed.
+                the shape comes out too thin or detailed. Your last{" "}
+                {AI_HISTORY_MAX} results are saved here.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {designOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm"
+          onClick={() => setDesignOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Design a tag with AI"
+            className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 border-b border-stone-200 px-5 py-4">
+              <Sparkles size={16} className="text-indigo-600" />
+              <h2 className="font-semibold">AI로 태그 디자인</h2>
+              <button
+                type="button"
+                onClick={() => setDesignOpen(false)}
+                title="Close"
+                className="ml-auto flex h-8 w-8 items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3 p-5">
+              <div className="space-y-1.5">
+                <span className="block text-sm font-medium">Model</span>
+                <div className="flex gap-1 rounded-lg bg-stone-100 p-0.5">
+                  {(
+                    [
+                      { key: "fast", label: "Fast", hint: "quicker" },
+                      { key: "detail", label: "Detail", hint: "higher quality" },
+                    ] as const
+                  ).map((m) => (
+                    <button
+                      key={m.key}
+                      type="button"
+                      onClick={() => setDesignMode(m.key)}
+                      className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+                        designMode === m.key
+                          ? "bg-white text-stone-800 shadow-sm"
+                          : "text-stone-500 hover:text-stone-700"
+                      }`}
+                    >
+                      {m.label}
+                      <span className="ml-1 text-[10px] text-stone-400">
+                        {m.hint}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <label className="block text-sm font-medium">
+                Describe your tag
+              </label>
+              <div className="flex gap-2">
+                <input
+                  autoFocus
+                  value={designPrompt}
+                  onChange={(e) => setDesignPrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") designTag();
+                  }}
+                  placeholder="예: 카페 홍보용, 따뜻한 감성, 이름 Mark"
+                  maxLength={200}
+                  className="min-w-0 flex-1 rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400"
+                />
+                <button
+                  type="button"
+                  onClick={designTag}
+                  disabled={designLoading || !designPrompt.trim()}
+                  className="flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition-colors enabled:hover:bg-indigo-500 disabled:opacity-40"
+                >
+                  {designLoading ? (
+                    <Loader2 size={15} className="animate-spin" />
+                  ) : (
+                    <Sparkles size={15} />
+                  )}
+                  Design
+                </button>
+              </div>
+
+              {designError && (
+                <p className="text-xs text-red-600">{designError}</p>
+              )}
+
+              <p className="text-[11px] leading-snug text-stone-400">
+                The AI picks a catalog icon, a contrasting Bambu filament pair
+                for base &amp; icon, and an optional back-engraved name — all
+                print-ready. You can tweak everything afterwards.
               </p>
             </div>
           </div>
