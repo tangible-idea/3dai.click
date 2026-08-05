@@ -27,6 +27,8 @@ export interface NfcOptions {
   /** Text width as a fraction of the base width. */
   backTextScale: number;
   backTextOffsetY: number;
+  /** Carve a sealed cavity for embedding a stick-on NFC tag mid-print. */
+  nfcPocket: boolean;
 }
 
 export const DEFAULT_NFC_OPTIONS: NfcOptions = {
@@ -40,7 +42,27 @@ export const DEFAULT_NFC_OPTIONS: NfcOptions = {
   backFont: DEFAULT_FONT_ID,
   backTextScale: 0.6,
   backTextOffsetY: 2.5,
+  nfcPocket: true,
 };
+
+// Sealed cylindrical cavity that holds a stick-on NFC tag. It sits fully
+// inside the base thickness (3.8mm): a solid floor below, the cavity, then a
+// thin ceiling above. Printed back-face-down, you pause when the floor
+// finishes (POCKET_FLOOR high), drop a ~25mm sticker onto it, and resume so
+// the ceiling bridges over and seals the tag inside.
+const POCKET_DIAMETER = 26; // mm — fits a standard 25mm NFC sticker
+const POCKET_DEPTH = 0.6; // mm — cavity height (thin: holds a flat NFC label)
+const POCKET_FLOOR = 1.0; // mm — solid layers below the cavity == pause height
+const POCKET_CENTER_Y = -2.5; // disc center offset from the base bbox center
+
+// Cylinder void, non-indexed so it can feed the CSG worker directly.
+function buildPocketCutter(): THREE.BufferGeometry {
+  const r = POCKET_DIAMETER / 2;
+  const cyl = new THREE.CylinderGeometry(r, r, POCKET_DEPTH, 64);
+  cyl.rotateX(Math.PI / 2); // cylinder axis Y -> Z (through the thickness)
+  cyl.translate(0, POCKET_CENTER_Y, POCKET_FLOOR + POCKET_DEPTH / 2);
+  return cyl.toNonIndexed();
+}
 
 let cachedNfcBase: THREE.BufferGeometry | null = null;
 
@@ -337,6 +359,13 @@ export async function buildNfc(
     color: opts.topColor,
     filament: 2,
   });
+
+  // Hollow out the sealed NFC-sticker cavity. Carved after the inlay so it
+  // subtracts from the already-recessed base; the two never overlap in z
+  // (inlay is z 0..0.6, cavity floor starts at 1.0mm).
+  if (opts.nfcPocket) {
+    objects[0].geometry = await carve(objects[0].geometry, buildPocketCutter());
+  }
 
   return { objects };
 }

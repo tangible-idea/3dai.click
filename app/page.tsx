@@ -17,6 +17,7 @@ import {
   LayoutGrid,
   X,
   FlipVertical2,
+  ScanEye,
 } from "lucide-react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -85,6 +86,9 @@ export default function Home() {
   const [objects, setObjects] = useState<NfcObject[] | null>(null);
   const [isGenerating, setIsGenerating] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // X-ray preview: makes the base translucent to confirm the NFC pocket sits
+  // correctly inside the tag.
+  const [xray, setXray] = useState(false);
 
   const [catalog, setCatalog] = useState<CatalogIcon[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -347,6 +351,15 @@ export default function Home() {
         metalness: 0.05,
         roughness: 0.65,
       });
+      // In X-ray mode the base turns glassy so the internal NFC pocket shows
+      // through; the icon and inlay stay solid as reference. depthWrite off +
+      // double-sided lets the cavity's inner walls read through the shell.
+      if (xray && o.name === "nfc_base") {
+        mat.transparent = true;
+        mat.opacity = 0.25;
+        mat.depthWrite = false;
+        mat.side = THREE.DoubleSide;
+      }
       group.add(new THREE.Mesh(o.geometry, mat));
     }
 
@@ -354,7 +367,7 @@ export default function Home() {
       fitView();
       framedRef.current = true;
     }
-  }, [objects, fitView]);
+  }, [objects, xray, fitView]);
 
   // --- model build (debounced, latest-wins) -------------------------------
   useEffect(() => {
@@ -593,6 +606,25 @@ export default function Home() {
                 value={opts.topThickness}
                 onChange={(v) => setOpts((o) => ({ ...o, topThickness: v }))}
               />
+
+              <label className="flex cursor-pointer items-center justify-between gap-2 text-sm">
+                <span className="font-medium">NFC sticker pocket</span>
+                <input
+                  type="checkbox"
+                  checked={opts.nfcPocket}
+                  onChange={(e) =>
+                    setOpts((o) => ({ ...o, nfcPocket: e.target.checked }))
+                  }
+                  className="h-4 w-4 cursor-pointer accent-indigo-600"
+                />
+              </label>
+              {opts.nfcPocket && (
+                <p className="text-xs text-stone-400">
+                  A ⌀26 × 0.6&nbsp;mm cavity is sealed inside the tag. Pause the
+                  print at ~1&nbsp;mm, drop in a 25&nbsp;mm NFC sticker, then
+                  resume to close it over.
+                </p>
+              )}
             </section>
           </div>
         </aside>
@@ -615,6 +647,18 @@ export default function Home() {
               className="flex items-center justify-center w-9 h-9 rounded-lg bg-white/80 backdrop-blur border border-stone-200 text-stone-600 hover:text-stone-900 hover:bg-white transition-colors"
             >
               <FlipVertical2 size={16} />
+            </button>
+            <button
+              onClick={() => setXray((v) => !v)}
+              title="X-ray — see the NFC pocket inside"
+              aria-pressed={xray}
+              className={`flex items-center justify-center w-9 h-9 rounded-lg backdrop-blur border transition-colors ${
+                xray
+                  ? "bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-500"
+                  : "bg-white/80 border-stone-200 text-stone-600 hover:text-stone-900 hover:bg-white"
+              }`}
+            >
+              <ScanEye size={16} />
             </button>
           </div>
 
