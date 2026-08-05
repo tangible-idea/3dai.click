@@ -29,19 +29,7 @@ import {
 import { export3mf } from "@/lib/export3mf";
 import { loadCatalog, iconSvgUrl, type CatalogIcon } from "@/lib/icons";
 import { FONT_OPTIONS } from "@/lib/fonts";
-
-const PRESET_COLORS = [
-  "#ffffff",
-  "#111111",
-  "#ff4fa3",
-  "#ffa8bd",
-  "#ef4444",
-  "#f97316",
-  "#facc15",
-  "#22c55e",
-  "#2563eb",
-  "#8b5cf6",
-];
+import { FILAMENT_GROUPS, filamentLabel } from "@/lib/filaments";
 
 // localStorage key for persisting the user's options between visits.
 const OPTIONS_STORAGE_KEY = "nfc-options-v1";
@@ -631,8 +619,14 @@ export default function Home() {
           </div>
 
           <div className="absolute bottom-3 left-3 flex items-center gap-2">
-            <LegendChip label="Filament 1 · Base" color={opts.baseColor} />
-            <LegendChip label="Filament 2 · Icon" color={opts.topColor} />
+            <LegendChip
+              label={`Base — ${filamentLabel(opts.baseColor) ?? opts.baseColor}`}
+              color={opts.baseColor}
+            />
+            <LegendChip
+              label={`Icon — ${filamentLabel(opts.topColor) ?? opts.topColor}`}
+              color={opts.topColor}
+            />
           </div>
 
           {isGenerating && (
@@ -792,6 +786,14 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Short tab labels for the filament groups.
+const TAB_LABELS: Record<string, string> = {
+  "PLA Matte": "Matte",
+  "PLA Basic": "Basic",
+  "PLA Pure": "Pure",
+  Generic: "Generic",
+};
+
 function ColorRow({
   label,
   value,
@@ -801,32 +803,75 @@ function ColorRow({
   value: string;
   onChange: (v: string) => void;
 }) {
+  const selectedLabel = filamentLabel(value);
+  // Default to the tab that contains the current color, else the first group.
+  const initialTab =
+    FILAMENT_GROUPS.find((g) =>
+      g.filaments.some((f) => f.hex === value.toUpperCase()),
+    )?.type ?? FILAMENT_GROUPS[0].type;
+  const [tab, setTab] = useState<string>(initialTab);
+
+  const active =
+    FILAMENT_GROUPS.find((g) => g.type === tab) ?? FILAMENT_GROUPS[0];
+
   return (
     <div className="space-y-2">
-      <div className="flex justify-between text-sm">
+      <div className="flex items-baseline justify-between gap-2 text-sm">
         <label className="font-medium">{label}</label>
-        <span className="text-stone-400 uppercase text-xs self-center">
-          {value}
+        <span className="min-w-0 truncate text-right text-xs text-stone-400">
+          {selectedLabel ? (
+            <>
+              {selectedLabel}
+              <span className="ml-1 uppercase text-stone-300">{value}</span>
+            </>
+          ) : (
+            <span className="uppercase">{value}</span>
+          )}
         </span>
       </div>
-      <div className="flex items-center gap-2 flex-wrap">
-        {PRESET_COLORS.map((color) => (
+
+      {/* Tabs */}
+      <div className="flex items-center gap-1 rounded-lg bg-stone-100 p-0.5">
+        {FILAMENT_GROUPS.map((group) => (
           <button
-            key={`${label}-${color}`}
+            key={`${label}-tab-${group.type}`}
             type="button"
-            title={color}
-            onClick={() => onChange(color)}
-            className={`w-7 h-7 rounded-full border transition-all ${
-              value.toLowerCase() === color
-                ? "ring-2 ring-indigo-500 ring-offset-2 border-stone-300"
-                : "border-stone-300 hover:scale-110"
+            onClick={() => setTab(group.type)}
+            className={`flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+              tab === group.type
+                ? "bg-white text-stone-800 shadow-sm"
+                : "text-stone-500 hover:text-stone-700"
             }`}
-            style={{ backgroundColor: color }}
-          />
+          >
+            {TAB_LABELS[group.type] ?? group.type}
+          </button>
         ))}
+      </div>
+
+      {/* Swatches for the active tab */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {active.filaments.map((f) => {
+          const selected = value.toUpperCase() === f.hex;
+          return (
+            <button
+              key={`${label}-${active.type}-${f.name}`}
+              type="button"
+              title={`${f.name} · ${f.hex}`}
+              aria-label={`${active.type} ${f.name}`}
+              onClick={() => onChange(f.hex)}
+              className={`h-6 w-6 rounded-full border transition-all ${
+                selected
+                  ? "ring-2 ring-indigo-500 ring-offset-1 border-stone-300"
+                  : "border-stone-300 hover:scale-110"
+              }`}
+              style={{ backgroundColor: f.hex }}
+            />
+          );
+        })}
+
         <label
           title="Custom color"
-          className="relative w-7 h-7 rounded-full border border-stone-300 cursor-pointer overflow-hidden bg-[conic-gradient(red,yellow,lime,cyan,blue,magenta,red)]"
+          className="relative h-6 w-6 rounded-full border border-stone-300 cursor-pointer overflow-hidden bg-[conic-gradient(red,yellow,lime,cyan,blue,magenta,red)]"
         >
           <input
             type="color"

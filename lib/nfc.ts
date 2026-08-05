@@ -31,8 +31,8 @@ export interface NfcOptions {
 
 export const DEFAULT_NFC_OPTIONS: NfcOptions = {
   iconSlug: "linkedin",
-  baseColor: "#ff4fa3",
-  topColor: "#ffffff",
+  baseColor: "#F5547C", // Bambu PLA Basic · Hot Pink
+  topColor: "#FFFFFF", // Bambu PLA Basic · Jade White
   iconScale: 0.8,
   topThickness: 1,
   iconOffsetY: 2.5,
