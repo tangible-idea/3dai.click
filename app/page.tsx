@@ -587,7 +587,7 @@ export default function Home() {
     <div className="h-dvh flex flex-col">
       {/* Header */}
       <header className="flex items-center gap-3 h-14 px-4 sm:px-6 bg-white border-b border-stone-200 shrink-0">
-        <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white">
+        <span className="flex items-center justify-center w-8 h-8 rounded-md bg-stone-900 text-white">
           <Nfc size={18} />
         </span>
         <div className="leading-tight">
@@ -599,7 +599,7 @@ export default function Home() {
         <button
           onClick={download}
           disabled={!objects || isGenerating}
-          className="ml-auto flex items-center gap-2 rounded-lg bg-indigo-600 enabled:hover:bg-indigo-500 disabled:opacity-40 text-white text-sm font-semibold px-4 py-2 transition-colors"
+          className="ml-auto flex items-center gap-2 rounded-md bg-stone-900 enabled:hover:bg-stone-800 disabled:opacity-40 text-white text-sm font-semibold px-4 py-2 transition-colors"
         >
           <Download size={16} /> Download 3MF
         </button>
@@ -614,16 +614,16 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => setDesignOpen(true)}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-3 py-3 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+                className="flex w-full items-center justify-center gap-2 rounded-md bg-stone-900 px-3 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-stone-800"
               >
                 <Sparkles size={16} />
-                AI로 태그 디자인
+                AI Tag Designer
               </button>
               {designSummary && (
                 <p className="flex items-start gap-1.5 text-xs text-stone-500">
                   <Sparkles
                     size={12}
-                    className="mt-0.5 shrink-0 text-indigo-500"
+                    className="mt-0.5 shrink-0 text-stone-600"
                   />
                   <span>{designSummary}</span>
                 </p>
@@ -635,7 +635,7 @@ export default function Home() {
               <SectionTitle>Icon</SectionTitle>
 
               <div className="flex items-stretch gap-2">
-                <div className="flex flex-1 items-center gap-3 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5">
+                <div className="flex flex-1 items-center gap-3 rounded-md border border-stone-200 bg-stone-50 px-3 py-2.5">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={iconPreviewSrc} alt="" className="w-7 h-7" />
                   <div className="leading-tight">
@@ -651,7 +651,7 @@ export default function Home() {
                   type="button"
                   onClick={() => setAiOpen(true)}
                   title="Generate an icon with AI"
-                  className="flex shrink-0 items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 text-sm font-semibold text-indigo-700 hover:bg-indigo-100 transition-colors"
+                  className="flex shrink-0 items-center gap-1.5 rounded-md border border-stone-300 bg-stone-100 px-3 text-sm font-semibold text-stone-900 hover:bg-stone-200 transition-colors"
                 >
                   <Sparkles size={16} />
                   AI
@@ -665,9 +665,9 @@ export default function Home() {
                     type="button"
                     title={icon.label}
                     onClick={() => selectIcon(icon.slug)}
-                    className={`flex flex-col items-center gap-1.5 rounded-xl border px-1 py-2.5 transition-all ${
+                    className={`flex flex-col items-center gap-1.5 rounded-md border px-1 py-2.5 transition-all ${
                       opts.iconSlug === icon.slug
-                        ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500"
+                        ? "border-stone-900 bg-stone-100 ring-1 ring-stone-900"
                         : "border-stone-200 bg-white hover:border-stone-300 hover:shadow-sm"
                     }`}
                   >
@@ -687,7 +687,7 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => setPickerOpen(true)}
-                className="w-full flex items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm font-medium text-stone-600 hover:border-indigo-300 hover:text-indigo-600 transition-colors"
+                className="w-full flex items-center justify-center gap-2 rounded-md border border-stone-200 bg-white px-3 py-2.5 text-sm font-medium text-stone-600 hover:border-stone-400 hover:text-stone-900 transition-colors"
               >
                 <LayoutGrid size={15} />
                 Browse all {catalog.length > 0 ? catalog.length.toLocaleString() : ""} icons
@@ -706,9 +706,9 @@ export default function Home() {
                   // when it is not already showing).
                   showBackFace();
                 }}
-                placeholder="e.g. 마크, Mark (optional)"
+                placeholder="e.g. Mark (optional)"
                 maxLength={20}
-                className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                className="w-full rounded-md border border-stone-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200"
               />
 
               {opts.backText.trim() && (
@@ -723,9 +723,9 @@ export default function Home() {
                           // Changing the font also shows the back face.
                           showBackFace();
                         }}
-                        className={`flex flex-col items-start gap-0.5 rounded-xl border px-3 py-2 text-left transition-all ${
+                        className={`flex flex-col items-start gap-0.5 rounded-md border px-3 py-2 text-left transition-all ${
                           opts.backFont === font.id
-                            ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500"
+                            ? "border-stone-900 bg-stone-100 ring-1 ring-stone-900"
                             : "border-stone-200 bg-white hover:border-stone-300 hover:shadow-sm"
                         }`}
                       >
@@ -733,7 +733,7 @@ export default function Home() {
                           className="text-lg leading-snug truncate max-w-full"
                           style={{ fontFamily: `"${font.cssFamily}"` }}
                         >
-                          {opts.backText.trim().slice(0, 8) || "가나다"}
+                          {opts.backText.trim().slice(0, 8) || "Ag"}
                         </span>
                         <span className="text-[11px] text-stone-400">
                           {font.label}
@@ -826,7 +826,7 @@ export default function Home() {
                   onChange={(e) =>
                     setOpts((o) => ({ ...o, nfcPocket: e.target.checked }))
                   }
-                  className="h-4 w-4 cursor-pointer accent-indigo-600"
+                  className="h-4 w-4 cursor-pointer accent-stone-900"
                 />
               </label>
               {opts.nfcPocket && (
@@ -848,14 +848,14 @@ export default function Home() {
             <button
               onClick={fitView}
               title="Fit view"
-              className="flex items-center justify-center w-9 h-9 rounded-lg bg-white/80 backdrop-blur border border-stone-200 text-stone-600 hover:text-stone-900 hover:bg-white transition-colors"
+              className="flex items-center justify-center w-9 h-9 rounded-md bg-white/80 backdrop-blur border border-stone-200 text-stone-600 hover:text-stone-900 hover:bg-white transition-colors"
             >
               <Maximize2 size={16} />
             </button>
             <button
               onClick={flipView}
               title="Show front / back"
-              className="flex items-center justify-center w-9 h-9 rounded-lg bg-white/80 backdrop-blur border border-stone-200 text-stone-600 hover:text-stone-900 hover:bg-white transition-colors"
+              className="flex items-center justify-center w-9 h-9 rounded-md bg-white/80 backdrop-blur border border-stone-200 text-stone-600 hover:text-stone-900 hover:bg-white transition-colors"
             >
               <FlipVertical2 size={16} />
             </button>
@@ -863,9 +863,9 @@ export default function Home() {
               onClick={() => setXray((v) => !v)}
               title="X-ray — see the NFC pocket inside"
               aria-pressed={xray}
-              className={`flex items-center justify-center w-9 h-9 rounded-lg backdrop-blur border transition-colors ${
+              className={`flex items-center justify-center w-9 h-9 rounded-md backdrop-blur border transition-colors ${
                 xray
-                  ? "bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-500"
+                  ? "bg-stone-900 border-stone-900 text-white hover:bg-stone-800"
                   : "bg-white/80 border-stone-200 text-stone-600 hover:text-stone-900 hover:bg-white"
               }`}
             >
@@ -886,15 +886,15 @@ export default function Home() {
 
           {isGenerating && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="flex items-center gap-2 rounded-full bg-white/85 backdrop-blur px-4 py-2 text-sm font-medium text-stone-600 shadow-sm">
-                <Loader2 size={16} className="animate-spin text-indigo-600" />
+              <div className="flex items-center gap-2 rounded-md bg-white/85 backdrop-blur px-4 py-2 text-sm font-medium text-stone-600 shadow-sm">
+                <Loader2 size={16} className="animate-spin text-stone-900" />
                 Building model…
               </div>
             </div>
           )}
 
           {error && (
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2.5 shadow-sm max-w-[90%]">
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-md bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2.5 shadow-sm max-w-[90%]">
               <AlertTriangle size={16} className="shrink-0" />
               {error}
             </div>
@@ -923,17 +923,17 @@ export default function Home() {
             role="dialog"
             aria-modal="true"
             aria-label="Generate an icon with AI"
-            className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+            className="w-full max-w-md overflow-hidden rounded-md bg-white shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-2 border-b border-stone-200 px-5 py-4">
-              <Sparkles size={16} className="text-indigo-600" />
+              <Sparkles size={16} className="text-stone-900" />
               <h2 className="font-semibold">Generate an icon with AI</h2>
               <button
                 type="button"
                 onClick={() => setAiOpen(false)}
                 title="Close"
-                className="ml-auto flex h-8 w-8 items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+                className="ml-auto flex h-8 w-8 items-center justify-center rounded-md text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
               >
                 <X size={18} />
               </button>
@@ -942,7 +942,7 @@ export default function Home() {
             <div className="space-y-3 p-5">
               <div className="space-y-1.5">
                 <span className="block text-sm font-medium">Model</span>
-                <div className="flex gap-1 rounded-lg bg-stone-100 p-0.5">
+                <div className="flex gap-1 rounded-md bg-stone-100 p-0.5">
                   {(
                     [
                       { key: "fast", label: "Fast", hint: "quicker" },
@@ -981,13 +981,13 @@ export default function Home() {
                   }}
                   placeholder="e.g. a smiling cat, minimal"
                   maxLength={200}
-                  className="min-w-0 flex-1 rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400"
+                  className="min-w-0 flex-1 rounded-md border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-stone-400"
                 />
                 <button
                   type="button"
                   onClick={generateIcon}
                   disabled={aiLoading || !aiPrompt.trim()}
-                  className="flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition-colors enabled:hover:bg-indigo-500 disabled:opacity-40"
+                  className="flex shrink-0 items-center gap-1.5 rounded-md bg-stone-900 px-3 py-2 text-sm font-semibold text-white transition-colors enabled:hover:bg-stone-800 disabled:opacity-40"
                 >
                   {aiLoading ? (
                     <Loader2 size={15} className="animate-spin" />
@@ -1026,9 +1026,9 @@ export default function Home() {
                             setAiOpen(false);
                           }}
                           title="Use this icon"
-                          className={`flex h-12 w-12 items-center justify-center rounded-lg border bg-white p-1.5 transition-all ${
+                          className={`flex h-12 w-12 items-center justify-center rounded-md border bg-white p-1.5 transition-all ${
                             active
-                              ? "border-indigo-500 ring-1 ring-indigo-500"
+                              ? "border-stone-900 ring-1 ring-stone-900"
                               : "border-stone-200 hover:border-stone-300 hover:shadow-sm"
                           }`}
                         >
@@ -1064,17 +1064,17 @@ export default function Home() {
             role="dialog"
             aria-modal="true"
             aria-label="Design a tag with AI"
-            className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+            className="w-full max-w-md overflow-hidden rounded-md bg-white shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-2 border-b border-stone-200 px-5 py-4">
-              <Sparkles size={16} className="text-indigo-600" />
-              <h2 className="font-semibold">AI로 태그 디자인</h2>
+              <Sparkles size={16} className="text-stone-900" />
+              <h2 className="font-semibold">AI Tag Designer</h2>
               <button
                 type="button"
                 onClick={() => setDesignOpen(false)}
                 title="Close"
-                className="ml-auto flex h-8 w-8 items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+                className="ml-auto flex h-8 w-8 items-center justify-center rounded-md text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
               >
                 <X size={18} />
               </button>
@@ -1083,7 +1083,7 @@ export default function Home() {
             <div className="space-y-3 p-5">
               <div className="space-y-1.5">
                 <span className="block text-sm font-medium">Model</span>
-                <div className="flex gap-1 rounded-lg bg-stone-100 p-0.5">
+                <div className="flex gap-1 rounded-md bg-stone-100 p-0.5">
                   {(
                     [
                       { key: "fast", label: "Fast", hint: "quicker" },
@@ -1120,15 +1120,15 @@ export default function Home() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter") designTag();
                   }}
-                  placeholder="예: 카페 홍보용, 따뜻한 감성, 이름 Mark"
+                  placeholder="e.g. cafe promo, warm vibe, name Mark"
                   maxLength={200}
-                  className="min-w-0 flex-1 rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400"
+                  className="min-w-0 flex-1 rounded-md border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-stone-400"
                 />
                 <button
                   type="button"
                   onClick={designTag}
                   disabled={designLoading || !designPrompt.trim()}
-                  className="flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition-colors enabled:hover:bg-indigo-500 disabled:opacity-40"
+                  className="flex shrink-0 items-center gap-1.5 rounded-md bg-stone-900 px-3 py-2 text-sm font-semibold text-white transition-colors enabled:hover:bg-stone-800 disabled:opacity-40"
                 >
                   {designLoading ? (
                     <Loader2 size={15} className="animate-spin" />
@@ -1194,7 +1194,7 @@ function IconPickerModal({
         role="dialog"
         aria-modal="true"
         aria-label="Choose an icon"
-        className="flex flex-col w-full max-w-4xl h-[85dvh] rounded-2xl bg-white shadow-2xl overflow-hidden"
+        className="flex flex-col w-full max-w-4xl h-[85dvh] rounded-md bg-white shadow-lg overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 px-5 py-4 border-b border-stone-200 shrink-0">
@@ -1206,7 +1206,7 @@ function IconPickerModal({
             type="button"
             onClick={onClose}
             title="Close"
-            className="ml-auto flex items-center justify-center w-8 h-8 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
+            className="ml-auto flex items-center justify-center w-8 h-8 rounded-md text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
           >
             <X size={18} />
           </button>
@@ -1223,7 +1223,7 @@ function IconPickerModal({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search icons…"
-              className="w-full rounded-xl border border-stone-200 bg-stone-50 pl-9 pr-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white"
+              className="w-full rounded-md border border-stone-200 bg-stone-50 pl-9 pr-3 py-2.5 text-sm outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200 focus:bg-white"
             />
           </div>
         </div>
@@ -1245,9 +1245,9 @@ function IconPickerModal({
                   type="button"
                   title={icon.title}
                   onClick={() => onSelect(icon.slug)}
-                  className={`flex flex-col items-center gap-1.5 rounded-xl border px-1 py-3 transition-all ${
+                  className={`flex flex-col items-center gap-1.5 rounded-md border px-1 py-3 transition-all ${
                     selected === icon.slug
-                      ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500"
+                      ? "border-stone-900 bg-stone-100 ring-1 ring-stone-900"
                       : "border-transparent hover:border-stone-200 hover:bg-stone-50"
                   }`}
                 >
@@ -1325,7 +1325,7 @@ function ColorRow({
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 rounded-lg bg-stone-100 p-0.5">
+      <div className="flex items-center gap-1 rounded-md bg-stone-100 p-0.5">
         {FILAMENT_GROUPS.map((group) => (
           <button
             key={`${label}-tab-${group.type}`}
@@ -1353,9 +1353,9 @@ function ColorRow({
               title={`${f.name} · ${f.hex}`}
               aria-label={`${active.type} ${f.name}`}
               onClick={() => onChange(f.hex)}
-              className={`h-6 w-6 rounded-full border transition-all ${
+              className={`h-6 w-6 rounded-md border transition-all ${
                 selected
-                  ? "ring-2 ring-indigo-500 ring-offset-1 border-stone-300"
+                  ? "ring-2 ring-stone-900 ring-offset-1 border-stone-300"
                   : "border-stone-300 hover:scale-110"
               }`}
               style={{ backgroundColor: f.hex }}
@@ -1365,7 +1365,7 @@ function ColorRow({
 
         <label
           title="Custom color"
-          className="relative h-6 w-6 rounded-full border border-stone-300 cursor-pointer overflow-hidden bg-[conic-gradient(red,yellow,lime,cyan,blue,magenta,red)]"
+          className="relative h-6 w-6 rounded-md border border-stone-300 cursor-pointer overflow-hidden bg-[conic-gradient(red,yellow,lime,cyan,blue,magenta,red)]"
         >
           <input
             type="color"
@@ -1412,7 +1412,7 @@ function Slider({
         step={step}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-full h-1.5 bg-stone-200 rounded-full appearance-none cursor-pointer accent-indigo-600"
+        className="w-full h-1.5 bg-stone-200 rounded-md appearance-none cursor-pointer accent-stone-900"
       />
     </div>
   );
@@ -1420,9 +1420,9 @@ function Slider({
 
 function LegendChip({ label, color }: { label: string; color: string }) {
   return (
-    <span className="flex items-center gap-2 rounded-full bg-white/80 backdrop-blur border border-stone-200 px-3 py-1.5 text-xs font-medium text-stone-600">
+    <span className="flex items-center gap-2 rounded-md bg-white/80 backdrop-blur border border-stone-200 px-3 py-1.5 text-xs font-medium text-stone-600">
       <span
-        className="w-3.5 h-3.5 rounded-full border border-stone-300"
+        className="w-3.5 h-3.5 rounded-md border border-stone-300"
         style={{ backgroundColor: color }}
       />
       {label}
